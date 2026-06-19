@@ -1,0 +1,107 @@
+name: suez_admin
+description: "لوحة إدارة بازار السويس - تطبيق مستقل لإدارة تطبيق Bazaar Suez"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flutter_localizations:
+    sdk: flutter
+
+  # أيقونات iOS
+  cupertino_icons: ^1.0.8
+
+  # 🔥 Firebase
+  firebase_core: ^4.2.0
+  cloud_firestore: ^6.0.3
+  cloud_functions: ^6.0.4
+  firebase_auth: ^6.1.1
+  firebase_storage: ^13.0.3
+  firebase_messaging: ^16.1.0
+  firebase_database: ^12.0.3
+
+  # 🔔 إشعارات
+  flutter_local_notifications: ^18.0.1
+  audioplayers: ^6.1.0
+
+  # 🌐 التوجيه وإدارة الحالة
+  go_router: ^16.2.5
+  provider: ^6.1.5
+
+  # 🔐 تسجيل الدخول
+  google_sign_in: ^6.1.5
+
+  # 🎨 UI
+  flutter_animate: ^4.5.2
+  google_fonts: ^6.2.1
+  font_awesome_flutter: ^10.12.0
+
+  # 📱 صلاحيات وصور ومشاركة
+  permission_handler: ^12.0.1
+  image_picker: ^1.0.8
+  url_launcher: ^6.3.0
+
+  # ⚙️ أدوات
+  uuid: ^4.5.1
+  http: ^1.1.0
+  intl: ^0.20.2
+  fl_chart: ^1.1.1
+
+  # 🖼️ صور وتخزين
+  cached_network_image: ^3.4.1
+  shared_preferences: ^2.5.5
+  connectivity_plus: ^6.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # ✅ إضافة أيقونة التطبيق
+  flutter_launcher_icons: ^0.14.4
+
+# ✅ إعدادات الأيقونة
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/icon/app_icon.png"
+  adaptive_icon_background: "#4E99B4"
+  adaptive_icon_foreground: "assets/images/icon/app_icon.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/egypt.jpg
+    - assets/images/logo.png
+    - assets/images/404.png
+    - assets/images/no_internet.png
+    - assets/images/categories/
+    - assets/images/Onboarding Screens/one.png
+    - assets/images/Onboarding Screens/two.png
+    - assets/images/Onboarding Screens/three.png
+    - assets/sounds/notification.mp3
+
+  fonts:
+    - family: Tajawal
+      fonts:
+        - asset: assets/fonts/Tajawal-Regular.ttf
+        - asset: assets/fonts/Tajawal-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Tajawal-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Tajawal-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Tajawal-Black.ttf
+          weight: 900
+        - asset: assets/fonts/Tajawal-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Tajawal-ExtraLight.ttf
+          weight: 200
