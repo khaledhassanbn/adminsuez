@@ -19,8 +19,12 @@ import 'package:suez_admin/reports/pages/report_detail_page.dart';
 import 'package:suez_admin/security/pages/deleted_accounts_page.dart';
 import 'package:suez_admin/security/pages/admin_roles_page.dart';
 import 'package:suez_admin/activity_logs/pages/activity_logs_page.dart';
+import 'package:suez_admin/support/pages/support_dashboard_page.dart';
+import 'package:suez_admin/support/pages/support_conversations_page.dart';
+import 'package:suez_admin/support/pages/admin_chat_page.dart';
 
 import 'package:go_router/go_router.dart';
+
 import 'package:provider/provider.dart';
 import 'package:suez_admin/authentication/guards/AuthGuard.dart';
 
@@ -136,5 +140,24 @@ final adminRoutes = [
   GoRoute(
     path: '/admin/activity-logs',
     builder: (context, state) => const ActivityLogsPage(),
+  ),
+  // مركز الدعم
+  GoRoute(
+    path: '/admin/support',
+    builder: (context, state) => const SupportDashboardPage(),
+  ),
+  GoRoute(
+    path: '/admin/support/conversations',
+    builder: (context, state) {
+      final statusFilter = state.uri.queryParameters['status'];
+      return SupportConversationsPage(initialStatusFilter: statusFilter);
+    },
+  ),
+  GoRoute(
+    path: '/admin/support/chat/:conversationId',
+    builder: (context, state) {
+      final conversationId = state.pathParameters['conversationId']!;
+      return AdminChatPage(conversationId: conversationId);
+    },
   ),
 ];

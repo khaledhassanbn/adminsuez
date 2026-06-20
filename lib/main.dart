@@ -13,6 +13,7 @@ import 'firebase_options.dart';
 // 🧠 Auth
 import 'authentication/guards/AuthGuard.dart';
 import 'authentication/viewModel/AuthViewModel.dart';
+import 'support/viewmodels/admin_support_viewmodel.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +66,7 @@ class _SuezAdminAppState extends State<SuezAdminApp> {
       providers: [
         ChangeNotifierProvider(create: (_) => _authGuard),
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
+        ChangeNotifierProvider(create: (_) => AdminSupportViewModel()),
         ChangeNotifierProvider<ConnectionService>.value(
           value: _connectionService,
         ),

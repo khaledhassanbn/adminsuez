@@ -308,6 +308,12 @@ class _AccountPageState extends State<AccountPage> {
           onTap: () => context.go('/admin/reports'),
         ),
         _MenuTileData(
+          icon: Icons.support_agent_rounded,
+          label: 'مركز الدعم',
+          subtitle: 'إدارة محادثات الدعم الفني والرد عليها',
+          onTap: () => context.go('/admin/support'),
+        ),
+        _MenuTileData(
           icon: Icons.admin_panel_settings_rounded,
           label: 'إدارة المسؤولين',
           subtitle: 'تعيين صلاحيات المسؤولين والمشرفين',
