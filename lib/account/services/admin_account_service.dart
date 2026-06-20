@@ -156,13 +156,14 @@ class AdminAccountService {
         'reason': reason.trim(),
       };
 
+      String? targetUserId;
+
       if (accountType == 'store') {
-        final marketsQuery = await _firestore
-            .collection('markets')
-            .where('ownerUid', isEqualTo: accountId)
-            .get();
-        for (var doc in marketsQuery.docs) {
-          batch.update(doc.reference, {
+        // 1. Try to treat accountId as store ID
+        final storeDoc = await _firestore.collection('markets').doc(accountId).get();
+        if (storeDoc.exists) {
+          targetUserId = storeDoc.data()?['ownerUid'] as String?;
+          batch.update(storeDoc.reference, {
             'adminStatus': 'deleted',
             'accountStatus': 'deleted',
             'isDeleted': true,
@@ -172,27 +173,62 @@ class AdminAccountService {
             'deletedBy': adminId,
             'lastAdminAction': lastAction,
           });
+        } else {
+          // 2. Try to treat accountId as ownerUid
+          final marketsQuery = await _firestore
+              .collection('markets')
+              .where('ownerUid', isEqualTo: accountId)
+              .get();
+          if (marketsQuery.docs.isNotEmpty) {
+            targetUserId = accountId;
+            for (var doc in marketsQuery.docs) {
+              batch.update(doc.reference, {
+                'adminStatus': 'deleted',
+                'accountStatus': 'deleted',
+                'isDeleted': true,
+                'isVisible': false,
+                'isActive': false,
+                'deletedAt': FieldValue.serverTimestamp(),
+                'deletedBy': adminId,
+                'lastAdminAction': lastAction,
+              });
+            }
+          }
         }
       } else {
+        // For craftsman and courier, accountId is the user's UID and the document ID in the sub-collection
+        targetUserId = accountId;
         final accountRef = _firestore.collection(collection).doc(accountId);
-        final Map<String, dynamic> updateData = {
-          'adminStatus': 'deleted',
-          'accountStatus': 'deleted',
-          'isDeleted': true,
-          'deletedAt': FieldValue.serverTimestamp(),
-          'deletedBy': adminId,
-          'lastAdminAction': lastAction,
-        };
-        if (accountType == 'craftsman') {
-          updateData['visibility'] = 'hidden';
-        } else if (accountType == 'courier') {
-          updateData['status'] = 'deleted';
+        final docSnap = await accountRef.get();
+        if (docSnap.exists) {
+          final Map<String, dynamic> updateData = {
+            'adminStatus': 'deleted',
+            'accountStatus': 'deleted',
+            'isDeleted': true,
+            'deletedAt': FieldValue.serverTimestamp(),
+            'deletedBy': adminId,
+            'lastAdminAction': lastAction,
+          };
+          if (accountType == 'craftsman') {
+            updateData['visibility'] = 'hidden';
+          } else if (accountType == 'courier') {
+            updateData['status'] = 'deleted';
+          }
+          batch.update(accountRef, updateData);
         }
-        batch.update(accountRef, updateData);
       }
 
-      // 2. Convert role in users collection
-      final userRef = _firestore.collection('users').doc(accountId);
+      if (targetUserId == null) {
+        throw Exception('لم يتم العثور على الحساب الخاص بهذا المعرف في السجلات الفرعية');
+      }
+
+      // Convert role in users collection
+      final userRef = _firestore.collection('users').doc(targetUserId);
+      final userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        throw Exception('لم يتم العثور على حساب المستخدم الرئيسي في قاعدة البيانات');
+      }
+
       batch.update(userRef, {
         'role': 'user',
         'previousAccountType': accountType == 'craftsman'
@@ -221,7 +257,12 @@ class AdminAccountService {
       final batch = _firestore.batch();
 
       // 1. Get previous account type from users collection
-      final userDoc = await _firestore.collection('users').doc(accountId).get();
+      final userRef = _firestore.collection('users').doc(accountId);
+      final userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        throw Exception('المستخدم غير موجود في السجلات الرئيسية');
+      }
+
       final userData = userDoc.data();
       final previousType = userData?['previousAccountType'];
 
@@ -270,24 +311,26 @@ class AdminAccountService {
         }
       } else {
         final accountRef = _firestore.collection(collection).doc(accountId);
-        final Map<String, dynamic> updateData = {
-          'adminStatus': 'active',
-          'accountStatus': 'active',
-          'isDeleted': false,
-          'deletedAt': FieldValue.delete(),
-          'deletedBy': FieldValue.delete(),
-          'lastAdminAction': lastAction,
-        };
-        if (accountType == 'craftsman') {
-          updateData['visibility'] = 'public';
-        } else if (accountType == 'courier') {
-          updateData['status'] = 'approved';
+        final docSnap = await accountRef.get();
+        if (docSnap.exists) {
+          final Map<String, dynamic> updateData = {
+            'adminStatus': 'active',
+            'accountStatus': 'active',
+            'isDeleted': false,
+            'deletedAt': FieldValue.delete(),
+            'deletedBy': FieldValue.delete(),
+            'lastAdminAction': lastAction,
+          };
+          if (accountType == 'craftsman') {
+            updateData['visibility'] = 'public';
+          } else if (accountType == 'courier') {
+            updateData['status'] = 'approved';
+          }
+          batch.update(accountRef, updateData);
         }
-        batch.update(accountRef, updateData);
       }
 
       // 3. Restore role in users collection
-      final userRef = _firestore.collection('users').doc(accountId);
       batch.update(userRef, {
         'role': restoredRole,
         'previousAccountType': FieldValue.delete(),

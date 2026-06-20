@@ -16,6 +16,9 @@ import 'package:suez_admin/account/pages/account_page.dart';
 import 'package:suez_admin/reports/models/user_report.dart';
 import 'package:suez_admin/reports/pages/reports_list_page.dart';
 import 'package:suez_admin/reports/pages/report_detail_page.dart';
+import 'package:suez_admin/security/pages/deleted_accounts_page.dart';
+import 'package:suez_admin/security/pages/admin_roles_page.dart';
+import 'package:suez_admin/activity_logs/pages/activity_logs_page.dart';
 
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -117,5 +120,21 @@ final adminRoutes = [
       final report = state.extra as UserReport;
       return ReportDetailPage(report: report);
     },
+  ),
+  GoRoute(
+    path: '/admin/roles',
+    builder: (context, state) => const AdminRolesPage(),
+  ),
+  GoRoute(
+    path: '/admin/add-admin',
+    builder: (context, state) => const AddAdminPage(),
+  ),
+  GoRoute(
+    path: '/admin/deleted-accounts',
+    builder: (context, state) => const DeletedAccountsPage(),
+  ),
+  GoRoute(
+    path: '/admin/activity-logs',
+    builder: (context, state) => const ActivityLogsPage(),
   ),
 ];

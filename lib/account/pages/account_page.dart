@@ -307,6 +307,24 @@ class _AccountPageState extends State<AccountPage> {
           subtitle: 'مراجعة البلاغات المقدمة من المستخدمين',
           onTap: () => context.go('/admin/reports'),
         ),
+        _MenuTileData(
+          icon: Icons.admin_panel_settings_rounded,
+          label: 'إدارة المسؤولين',
+          subtitle: 'تعيين صلاحيات المسؤولين والمشرفين',
+          onTap: () => context.go('/admin/roles'),
+        ),
+        _MenuTileData(
+          icon: Icons.delete_sweep_rounded,
+          label: 'الحسابات المحذوفة',
+          subtitle: 'استعراض واستعادة الحسابات المحذوفة مؤقتاً',
+          onTap: () => context.go('/admin/deleted-accounts'),
+        ),
+        _MenuTileData(
+          icon: Icons.history_rounded,
+          label: 'سجلات النشاط',
+          subtitle: 'عرض سجل العمليات والنشاطات الإدارية',
+          onTap: () => context.go('/admin/activity-logs'),
+        ),
       ],
     );
   }

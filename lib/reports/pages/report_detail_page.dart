@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/user_report.dart';
 import '../services/report_service.dart';
 import '../../account/services/admin_account_service.dart';
@@ -31,11 +33,13 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
   final AdminAccountService _adminService = AdminAccountService();
   bool _isLoading = false;
   int _reportCount = 0;
+  String? _targetName;
 
   @override
   void initState() {
     super.initState();
     _loadReportCount();
+    _loadTargetName();
   }
 
   Future<void> _loadReportCount() async {
@@ -46,6 +50,79 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
       setState(() => _reportCount = count);
     } catch (e) {
       debugPrint('Error loading report count: $e');
+    }
+  }
+
+  Future<void> _loadTargetName() async {
+    try {
+      final details = await _adminService.getAccountDetails(
+        accountId: widget.report.targetId,
+        accountType: widget.report.targetType,
+      );
+      if (details != null) {
+        String? name;
+        if (widget.report.targetType == 'craftsman') {
+          name = details['name'] as String?;
+        } else if (widget.report.targetType == 'store') {
+          name = details['storeName'] as String? ?? details['name'] as String?;
+        } else {
+          name = details['name'] as String?;
+        }
+        if (mounted && name != null && name.isNotEmpty) {
+          setState(() => _targetName = name);
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading target name from sub-collection: $e');
+    }
+
+    // Fallback: Query the main 'users' collection using targetId as document ID
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.report.targetId)
+          .get();
+      if (userDoc.exists && mounted) {
+        final userData = userDoc.data();
+        final name = userData?['name'] as String?;
+        if (name != null && name.isNotEmpty) {
+          setState(() => _targetName = name);
+        }
+      }
+    } catch (err) {
+      debugPrint('Error loading target name from users collection: $err');
+    }
+  }
+
+  Future<void> _launchPersonalPage() async {
+    final targetId = widget.report.targetId;
+    final type = widget.report.targetType;
+    String urlString = '';
+    if (type == 'craftsman') {
+      urlString = 'https://bazaarsuez.com/craftsman/$targetId';
+    } else if (type == 'store') {
+      urlString = 'https://bazaarsuez.com/market/$targetId';
+    } else {
+      return;
+    }
+
+    try {
+      final Uri url = Uri.parse(urlString);
+      final launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        await launchUrl(url);
+      }
+    } catch (e) {
+      debugPrint('Error launching URL: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر فتح الرابط: $urlString')),
+        );
+      }
     }
   }
 
@@ -156,7 +233,7 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.report.targetId,
+                      _targetName ?? widget.report.targetId,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -204,6 +281,33 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
               valueWidget: _countPill(_reportCount),
               iconColor: AppColors.warning,
               iconBg: const Color(0xFFFEF9EC),
+            ),
+          ],
+          if (widget.report.targetType == 'craftsman' ||
+              widget.report.targetType == 'store') ...[
+            _divider(),
+            _infoRow(
+              icon: Icons.visibility_outlined,
+              label: 'عرض الصفحة الشخصية',
+              valueWidget: GestureDetector(
+                onTap: _launchPersonalPage,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Text(
+                    widget.report.targetType == 'craftsman'
+                        ? 'عرض ملف الصنايعي'
+                        : 'عرض صفحة المتجر',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.mainColor,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ),
+              iconColor: AppColors.mainColor,
+              iconBg: AppColors.mainLight,
             ),
           ],
         ],
