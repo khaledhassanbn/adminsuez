@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
 import '../../../theme/app_color.dart';
 import '../services/stores_service.dart';
 import 'store_info_card.dart';
@@ -209,6 +210,44 @@ class StoreCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                context.push(
+                                  '/admin/store-commission/$marketId',
+                                );
+                              },
+                              icon: const Icon(Icons.payments_outlined,
+                                  size: 18),
+                              label: const Text(
+                                'العمولة والمحفظة',
+                                style: TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                context.push(
+                                  '/admin/store-dashboard/$marketId',
+                                );
+                              },
+                              icon: const Icon(Icons.dashboard_outlined,
+                                  size: 18),
+                              label: const Text(
+                                'لوحة المتجر',
+                                style: TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
                       // زر الإجراءات
                       StoreActionsButton(marketId: marketId, service: service),
                     ],

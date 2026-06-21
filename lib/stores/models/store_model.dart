@@ -9,6 +9,12 @@ class StoreModel {
   final DateTime? licenseEndAt;
   final int? totalProducts;
   final Map<String, dynamic>? userData;
+  final double commissionRate;
+  final String commissionType;
+  final double creditLimit;
+  final double totalCommissionsPaid;
+  final DateTime? lastCommissionAt;
+  final double? walletBalance;
 
   StoreModel({
     required this.id,
@@ -19,6 +25,12 @@ class StoreModel {
     this.licenseEndAt,
     this.totalProducts,
     this.userData,
+    this.commissionRate = 5.0,
+    this.commissionType = 'fixed',
+    this.creditLimit = -50.0,
+    this.totalCommissionsPaid = 0.0,
+    this.lastCommissionAt,
+    this.walletBalance,
   });
 
   factory StoreModel.fromDocument(DocumentSnapshot doc) {
@@ -38,6 +50,11 @@ class StoreModel {
       licenseStartAt: readDate(data['licenseStartAt']),
       licenseEndAt: readDate(data['licenseEndAt']),
       totalProducts: data['totalProducts'] as int?,
+      commissionRate: (data['commissionRate'] ?? 5.0).toDouble(),
+      commissionType: data['commissionType']?.toString() ?? 'fixed',
+      creditLimit: (data['creditLimit'] ?? -50.0).toDouble(),
+      totalCommissionsPaid: (data['totalCommissionsPaid'] ?? 0.0).toDouble(),
+      lastCommissionAt: readDate(data['lastCommissionAt']),
     );
   }
 
@@ -50,7 +67,48 @@ class StoreModel {
       'licenseStartAt': licenseStartAt != null ? Timestamp.fromDate(licenseStartAt!) : null,
       'licenseEndAt': licenseEndAt != null ? Timestamp.fromDate(licenseEndAt!) : null,
       'totalProducts': totalProducts,
+      'commissionRate': commissionRate,
+      'commissionType': commissionType,
+      'creditLimit': creditLimit,
+      'totalCommissionsPaid': totalCommissionsPaid,
+      'lastCommissionAt': lastCommissionAt != null
+          ? Timestamp.fromDate(lastCommissionAt!)
+          : null,
     };
+  }
+
+  StoreModel copyWith({
+    String? id,
+    String? name,
+    String? phone,
+    bool? isActive,
+    DateTime? licenseStartAt,
+    DateTime? licenseEndAt,
+    int? totalProducts,
+    Map<String, dynamic>? userData,
+    double? commissionRate,
+    String? commissionType,
+    double? creditLimit,
+    double? totalCommissionsPaid,
+    DateTime? lastCommissionAt,
+    double? walletBalance,
+  }) {
+    return StoreModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      isActive: isActive ?? this.isActive,
+      licenseStartAt: licenseStartAt ?? this.licenseStartAt,
+      licenseEndAt: licenseEndAt ?? this.licenseEndAt,
+      totalProducts: totalProducts ?? this.totalProducts,
+      userData: userData ?? this.userData,
+      commissionRate: commissionRate ?? this.commissionRate,
+      commissionType: commissionType ?? this.commissionType,
+      creditLimit: creditLimit ?? this.creditLimit,
+      totalCommissionsPaid: totalCommissionsPaid ?? this.totalCommissionsPaid,
+      lastCommissionAt: lastCommissionAt ?? this.lastCommissionAt,
+      walletBalance: walletBalance ?? this.walletBalance,
+    );
   }
 
   // حساب الأيام المتبقية

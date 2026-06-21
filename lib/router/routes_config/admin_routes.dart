@@ -22,6 +22,13 @@ import 'package:suez_admin/activity_logs/pages/activity_logs_page.dart';
 import 'package:suez_admin/support/pages/support_dashboard_page.dart';
 import 'package:suez_admin/support/pages/support_conversations_page.dart';
 import 'package:suez_admin/support/pages/admin_chat_page.dart';
+import 'package:suez_admin/commission/pages/commission_settings_page.dart';
+import 'package:suez_admin/commission/pages/wallet_management_page.dart';
+import 'package:suez_admin/commission/pages/store_commission_page.dart';
+import 'package:suez_admin/finance/pages/finance_ledger_page.dart';
+import 'package:suez_admin/orders/pages/order_lookup_page.dart';
+import 'package:suez_admin/orders/pages/store_dashboard_page.dart';
+import 'package:suez_admin/orders/pages/invoice_lookup_page.dart';
 
 import 'package:go_router/go_router.dart';
 
@@ -158,6 +165,46 @@ final adminRoutes = [
     builder: (context, state) {
       final conversationId = state.pathParameters['conversationId']!;
       return AdminChatPage(conversationId: conversationId);
+    },
+  ),
+  GoRoute(
+    path: '/admin/commission-settings',
+    builder: (context, state) => const CommissionSettingsPage(),
+  ),
+  GoRoute(
+    path: '/admin/wallet-management',
+    builder: (context, state) => const WalletManagementPage(),
+  ),
+  GoRoute(
+    path: '/admin/store-commission/:storeId',
+    builder: (context, state) {
+      final storeId = state.pathParameters['storeId']!;
+      return StoreCommissionPage(storeId: storeId);
+    },
+  ),
+  GoRoute(
+    path: '/admin/finance-ledger',
+    builder: (context, state) => const FinanceLedgerPage(),
+  ),
+  GoRoute(
+    path: '/admin/order-lookup',
+    builder: (context, state) {
+      final orderId = state.uri.queryParameters['orderId'];
+      return OrderLookupPage(initialOrderId: orderId);
+    },
+  ),
+  GoRoute(
+    path: '/admin/store-dashboard/:storeId',
+    builder: (context, state) {
+      final storeId = state.pathParameters['storeId']!;
+      return StoreDashboardPage(storeId: storeId);
+    },
+  ),
+  GoRoute(
+    path: '/admin/invoice-lookup',
+    builder: (context, state) {
+      final number = state.uri.queryParameters['number'];
+      return InvoiceLookupPage(initialNumber: number);
     },
   ),
 ];

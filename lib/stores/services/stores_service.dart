@@ -33,25 +33,18 @@ class StoresService {
     Map<String, dynamic> storeData,
   ) async {
     try {
-      if (storeData['totalProducts'] != null) {
-        return storeData['totalProducts'] as int;
-      }
-
-      int totalCount = 0;
-      final categories = await _firestore
-          .collection('markets')
-          .doc(marketId)
-          .collection('products')
+      final countSnap = await _firestore
+          .collectionGroup('items')
+          .where('marketId', isEqualTo: marketId)
+          .count()
           .get();
+      final totalCount = countSnap.count ?? 0;
 
-      for (var category in categories.docs) {
-        final count = category.data()['numberOfProducts'] as int? ?? 0;
-        totalCount += count;
+      if (storeData['totalProducts'] != totalCount) {
+        await _firestore.collection('markets').doc(marketId).update({
+          'totalProducts': totalCount,
+        });
       }
-
-      await _firestore.collection('markets').doc(marketId).update({
-        'totalProducts': totalCount,
-      });
 
       return totalCount;
     } catch (e) {

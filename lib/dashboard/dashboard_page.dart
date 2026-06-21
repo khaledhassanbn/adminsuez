@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:suez_admin/authentication/guards/AuthGuard.dart';
 import 'package:suez_admin/theme/app_color.dart';
+import 'package:suez_admin/commission/services/commission_admin_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -21,7 +22,12 @@ class _DashboardPageState extends State<DashboardPage>
   int _inactiveStores = 0;
   int _totalProducts = 0;
   int _productsAddedToday = 0;
+  int _totalCommissions = 0;
+  int _pendingDepositRequests = 0;
+  int _storesNearCreditLimit = 0;
+  int _negativeBalanceStores = 0;
   bool _isLoading = true;
+  final CommissionAdminService _commissionService = CommissionAdminService();
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -76,9 +82,8 @@ class _DashboardPageState extends State<DashboardPage>
       _totalStores = storesSnapshot.docs.length;
       _activeStores = 0;
       _inactiveStores = 0;
-      _totalProducts = 0;
 
-      // حساب المتاجر النشطة وغير النشطة وإجمالي المنتجات
+      // حساب المتاجر النشطة وغير النشطة
       for (var doc in storesSnapshot.docs) {
         final data = doc.data();
         final isActive = data['isActive'] == true;
@@ -88,14 +93,42 @@ class _DashboardPageState extends State<DashboardPage>
         } else {
           _inactiveStores++;
         }
-
-        // إضافة عدد المنتجات من الحقل totalProducts
-        final totalProducts = data['totalProducts'] as int? ?? 0;
-        _totalProducts += totalProducts;
       }
+
+      // حساب عدد المنتجات الفعلي لكل متجر وتحديثه في قاعدة البيانات
+      int totalProductsSum = 0;
+      final futures = storesSnapshot.docs.map((doc) async {
+        final marketId = doc.id;
+        final data = doc.data();
+        try {
+          final countSnap = await _firestore
+              .collectionGroup('items')
+              .where('marketId', isEqualTo: marketId)
+              .count()
+              .get();
+          final actualProducts = countSnap.count ?? 0;
+
+          if (data['totalProducts'] != actualProducts) {
+            await _firestore.collection('markets').doc(marketId).update({
+              'totalProducts': actualProducts,
+            });
+          }
+          return actualProducts;
+        } catch (e) {
+          print('خطأ في جلب عدد المنتجات الفعلي للمتجر $marketId: $e');
+          return data['totalProducts'] as int? ?? 0;
+        }
+      });
+
+      final counts = await Future.wait(futures);
+      for (final count in counts) {
+        totalProductsSum += count;
+      }
+      _totalProducts = totalProductsSum;
 
       // حساب المنتجات المضافة اليوم
       await _calculateProductsAddedToday(storesSnapshot.docs);
+      await _loadCommissionStats();
 
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -113,6 +146,27 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         );
       }
+    }
+  }
+
+  Future<void> _loadCommissionStats() async {
+    try {
+      final stats = await _commissionService.getCommissionStats();
+      final pendingDeposits = await _firestore
+          .collection('wallet_transactions')
+          .where('status', isEqualTo: 'pending')
+          .get();
+      final nearCredit = await _commissionService.getStoresNearCreditLimitCount();
+      final negative = await _commissionService.getNegativeBalanceStoresCount();
+      if (!mounted) return;
+      setState(() {
+        _totalCommissions = stats['total'] ?? 0;
+        _pendingDepositRequests = pendingDeposits.docs.length;
+        _storesNearCreditLimit = nearCredit;
+        _negativeBalanceStores = negative;
+      });
+    } catch (e) {
+      print('خطأ في تحميل إحصائيات العمولات: $e');
     }
   }
 
@@ -261,6 +315,8 @@ class _DashboardPageState extends State<DashboardPage>
                                 _buildStoresDistributionCard(),
                                 const SizedBox(height: 24),
                                 _buildProductsSection(),
+                                const SizedBox(height: 24),
+                                _buildCommissionOverviewSection(),
                                 const SizedBox(height: 24),
                                 _buildQuickActions(),
                                 const SizedBox(height: 20),
@@ -956,6 +1012,120 @@ class _DashboardPageState extends State<DashboardPage>
             const SizedBox(height: 16),
             InkWell(
               onTap: () {
+                context.go('/admin/commission-settings');
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.mainColor.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.mainColor.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.mainColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.settings_suggest_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'عمولة التطبيق',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2C3E50),
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'ضبط رسوم الخدمة لكل المتاجر دفعة واحدة',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: AppColors.mainColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: () {
+                context.go('/admin/wallet-management');
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.mainColor.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.mainColor.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.mainColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.account_balance_wallet_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'إدارة طلبات الشحن',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2C3E50),
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'الموافقة أو الرفض لطلبات شحن المحفظة',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: AppColors.mainColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: () {
                 context.go('/admin/ads');
               },
               borderRadius: BorderRadius.circular(12),
@@ -1203,6 +1373,50 @@ class _DashboardPageState extends State<DashboardPage>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCommissionOverviewSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.12),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'ملخص العمولات والمحفظة',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          _metricRow('إجمالي العمولات', _totalCommissions.toString()),
+          _metricRow('طلبات الشحن المعلقة', _pendingDepositRequests.toString()),
+          _metricRow('متاجر قريبة من الحد الائتماني', _storesNearCreditLimit.toString()),
+          _metricRow('متاجر برصيد سالب', _negativeBalanceStores.toString()),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }

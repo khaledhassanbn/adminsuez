@@ -296,6 +296,36 @@ class _AccountPageState extends State<AccountPage> {
           onTap: () => context.go('/admin/delivery-fee-settings'),
         ),
         _MenuTileData(
+          icon: Icons.payments_outlined,
+          label: 'عمولة التطبيق',
+          subtitle: 'رسوم الخدمة لكل المتاجر — زر حفظ واحد',
+          onTap: () => context.go('/admin/commission-settings'),
+        ),
+        _MenuTileData(
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'إدارة طلبات الشحن',
+          subtitle: 'الموافقة على شحن محافظ التجار',
+          onTap: () => context.go('/admin/wallet-management'),
+        ),
+        _MenuTileData(
+          icon: Icons.account_balance_rounded,
+          label: 'الإدارة المالية',
+          subtitle: 'سجل موحد لكل الحركات المالية مع بحث وفلاتر',
+          onTap: () => context.go('/admin/finance-ledger'),
+        ),
+        _MenuTileData(
+          icon: Icons.manage_search_rounded,
+          label: 'البحث عن الطلبات',
+          subtitle: 'بحث برقم الطلب وعرض تفاصيله وسجل حالاته',
+          onTap: () => context.go('/admin/order-lookup'),
+        ),
+        _MenuTileData(
+          icon: Icons.receipt_rounded,
+          label: 'البحث عن الفواتير',
+          subtitle: 'بحث برقم الفاتورة وعرض تفاصيلها',
+          onTap: () => context.go('/admin/invoice-lookup'),
+        ),
+        _MenuTileData(
           icon: Icons.motorcycle_rounded,
           label: 'طلبات تسجيل المناديب',
           subtitle: 'مراجعة وقبول أو رفض طلبات المناديب الجدد',
