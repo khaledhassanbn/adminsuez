@@ -26,6 +26,14 @@ class _DashboardPageState extends State<DashboardPage>
   int _pendingDepositRequests = 0;
   int _storesNearCreditLimit = 0;
   int _negativeBalanceStores = 0;
+
+  // إحصائيات الطلبات المتقدمة
+  int _todayTotalOrders = 0;
+  int _todayCompletedOrders = 0;
+  int _todayCancelledOrders = 0;
+  double _todayCommissions = 0.0;
+  int _totalOrders = 0;
+
   bool _isLoading = true;
   final CommissionAdminService _commissionService = CommissionAdminService();
 
@@ -69,6 +77,46 @@ class _DashboardPageState extends State<DashboardPage>
     _animationController.dispose();
     super.dispose();
   }
+
+  bool _isCompletedOrder(Map<String, dynamic> data) {
+    final orderStatus = (data['orderStatus'] ?? '').toString();
+    final lifecycle = (data['lifecycleStatus'] ?? '').toString();
+    final status = (data['status'] ?? '').toString();
+    if (orderStatus == 'completed') return true;
+    if (lifecycle == 'fulfilled') return true;
+    if (status == 'تم التسليم للطيار' || status == 'تم التسليم') return true;
+    if (status.toLowerCase() == 'delivered' ||
+        status.toLowerCase() == 'completed') {
+      return true;
+    }
+    final deliveryStatus =
+        (data['deliveryRequest']?['status'] ?? '').toString();
+    if (deliveryStatus == 'completed') return true;
+    return false;
+  }
+
+  bool _isCancelledOrder(Map<String, dynamic> data) {
+    if (data['cancelReason'] != null &&
+        data['cancelReason'].toString().isNotEmpty) {
+      return true;
+    }
+    final orderStatus = (data['orderStatus'] ?? '').toString();
+    final status = (data['status'] ?? '').toString();
+    final lifecycle = (data['lifecycleStatus'] ?? '').toString();
+    const cancelStatuses = {
+      'cancelled',
+      'cancelled_by_customer',
+      'cancelled_by_merchant',
+      'rejected',
+    };
+    if (cancelStatuses.contains(orderStatus)) return true;
+    if (cancelStatuses.contains(status)) return true;
+    if (lifecycle == 'cancelled') return true;
+    if (status.contains('إلغاء') || status.contains('رفض')) return true;
+    return false;
+  }
+
+  double _toD(dynamic v) => (v is num) ? v.toDouble() : 0.0;
 
   Future<void> _loadDashboardData() async {
     try {
@@ -128,6 +176,44 @@ class _DashboardPageState extends State<DashboardPage>
 
       // حساب المنتجات المضافة اليوم
       await _calculateProductsAddedToday(storesSnapshot.docs);
+
+      // حساب إحصائيات الطلبات
+      final now = DateTime.now();
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      final endOfDay = startOfDay.add(const Duration(days: 1));
+
+      // 1. عدد الطلبات الإجمالي
+      final totalOrdersSnap = await _firestore.collection('orders').count().get();
+      _totalOrders = totalOrdersSnap.count ?? 0;
+
+      // 2. طلبات اليوم
+      final todayOrdersSnapshot = await _firestore
+          .collection('orders')
+          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('createdAt', isLessThan: Timestamp.fromDate(endOfDay))
+          .get();
+
+      int todayTotal = 0;
+      int todayCompleted = 0;
+      int todayCancelled = 0;
+      double todayComm = 0.0;
+
+      for (var doc in todayOrdersSnapshot.docs) {
+        final data = doc.data();
+        todayTotal++;
+        if (_isCompletedOrder(data)) {
+          todayCompleted++;
+          todayComm += _toD(data['serviceFee']);
+        } else if (_isCancelledOrder(data)) {
+          todayCancelled++;
+        }
+      }
+
+      _todayTotalOrders = todayTotal;
+      _todayCompletedOrders = todayCompleted;
+      _todayCancelledOrders = todayCancelled;
+      _todayCommissions = todayComm;
+
       await _loadCommissionStats();
 
       if (!mounted) return;
@@ -310,6 +396,8 @@ class _DashboardPageState extends State<DashboardPage>
                               children: [
                                 _buildWelcomeSection(),
                                 const SizedBox(height: 24),
+                                _buildTodayStatsSection(),
+                                const SizedBox(height: 24),
                                 _buildMainStatsGrid(),
                                 const SizedBox(height: 24),
                                 _buildStoresDistributionCard(),
@@ -488,13 +576,178 @@ class _DashboardPageState extends State<DashboardPage>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'إليك نظرة عامة على نشاط المتاجر',
+                  'إليك نظرة عامة على نشاط المتاجر والطلبات',
                   style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTodayStatsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.mainColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.today_rounded, color: AppColors.mainColor, size: 22),
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'نشاط وحركة اليوم',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2C3E50),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 14,
+          crossAxisSpacing: 14,
+          childAspectRatio: 1.35,
+          children: [
+            _buildTodayStatCard(
+              title: 'طلبات اليوم',
+              value: _todayTotalOrders.toString(),
+              icon: Icons.shopping_bag_rounded,
+              color: const Color(0xFF3498DB),
+              subtitle: 'إجمالي الطلبات اليوم',
+            ),
+            _buildTodayStatCard(
+              title: 'الطلبات المكتملة',
+              value: _todayCompletedOrders.toString(),
+              icon: Icons.check_circle_rounded,
+              color: const Color(0xFF2ECC71),
+              subtitle: 'تم توصيلها اليوم',
+            ),
+            _buildTodayStatCard(
+              title: 'الطلبات الملغاة',
+              value: _todayCancelledOrders.toString(),
+              icon: Icons.cancel_rounded,
+              color: const Color(0xFFE74C3C),
+              subtitle: 'ملغاة اليوم',
+            ),
+            _buildTodayStatCard(
+              title: 'عمولات اليوم',
+              value: '${_todayCommissions.toStringAsFixed(1)} ج.م',
+              icon: Icons.payments_rounded,
+              color: const Color(0xFFF1C40F),
+              subtitle: 'أرباح اليوم',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTodayStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required String subtitle,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: color.withOpacity(0.15),
+          width: 1,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            Positioned(
+              left: -15,
+              top: -15,
+              child: CircleAvatar(
+                radius: 35,
+                backgroundColor: color.withOpacity(0.05),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              bottom: 10,
+              child: Icon(
+                icon,
+                color: color.withOpacity(0.15),
+                size: 45,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(icon, color: color, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          value,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[900],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -517,7 +770,21 @@ class _DashboardPageState extends State<DashboardPage>
                 delay: 0,
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildEnhancedStatCard(
+                icon: Icons.shopping_cart_checkout_rounded,
+                title: 'إجمالي الطلبات',
+                value: _totalOrders.toString(),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF9B59B6), Color(0xFF8E44AD)],
+                ),
+                delay: 50,
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: _buildEnhancedStatCard(
                 icon: Icons.inventory_2_rounded,
@@ -1009,7 +1276,63 @@ class _DashboardPageState extends State<DashboardPage>
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            InkWell(
+              onTap: () {
+                context.go('/admin/sales-analytics');
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.mainColor.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.mainColor.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.mainColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.analytics_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'تحليلات المبيعات والنشاط',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2C3E50),
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'عرض مبيعات كل متجر ونشاط كل مندوب بالتفصيل',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: AppColors.mainColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             InkWell(
               onTap: () {
                 context.go('/admin/commission-settings');

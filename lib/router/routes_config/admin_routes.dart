@@ -5,6 +5,7 @@ import 'package:suez_admin/stores/stores_list_page.dart';
 import 'package:suez_admin/categories/manage_categories_page.dart';
 import 'package:suez_admin/categories/create_edit_category_page.dart';
 import 'package:suez_admin/dashboard/dashboard_page.dart';
+import 'package:suez_admin/dashboard/sales_analytics_page.dart';
 import 'package:suez_admin/ads/views/admin_ads_page.dart';
 import 'package:suez_admin/ads/views/admin_ad_requests_page.dart';
 import 'package:suez_admin/offices/offices_list_page.dart';
@@ -45,6 +46,10 @@ final adminRoutes = [
   GoRoute(
     path: '/admin/dashboard',
     builder: (context, state) => const DashboardPage(),
+  ),
+  GoRoute(
+    path: '/admin/sales-analytics',
+    builder: (context, state) => const SalesAnalyticsPage(),
   ),
   GoRoute(
     path: '/admin/create-package',
