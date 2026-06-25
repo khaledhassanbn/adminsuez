@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:suez_admin/commission/models/wallet_ledger_model.dart';
 import 'package:suez_admin/commission/services/commission_admin_service.dart';
+import 'package:suez_admin/notifications/widgets/send_direct_notification_dialog.dart';
 import 'package:suez_admin/stores/models/store_model.dart';
 import 'package:suez_admin/theme/app_color.dart';
 
@@ -261,6 +262,19 @@ class _StoreCommissionPageState extends State<StoreCommissionPage>
       stretch: true,
       backgroundColor: _primary,
       foregroundColor: Colors.white,
+      actions: [
+        if (_ownerId != null)
+          IconButton(
+            icon: const Icon(Icons.notifications_active_outlined),
+            tooltip: 'إرسال إشعار',
+            onPressed: () => SendDirectNotificationDialog.show(
+              context,
+              targetUserId: _ownerId!,
+              targetUserName: _store?.name ?? 'صاحب المتجر',
+              targetUserType: 'merchant',
+            ),
+          ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         stretchModes: const [StretchMode.zoomBackground],
         background: Container(

@@ -61,23 +61,17 @@ class AdminLayout extends StatelessWidget {
 
   int _getIndexFromRoute(BuildContext context) {
     final route = GoRouterState.of(context).matchedLocation;
-    if (route.startsWith('/admin/dashboard')) {
-      return 0;
-    }
-    if (route.startsWith('/admin/create-package') ||
-        route.startsWith('/admin/manage-packages') ||
-        route.startsWith('/admin/manage-categories') ||
-        route.startsWith('/admin/create-category') ||
-        route.startsWith('/admin/edit-category')) {
+    if (route.startsWith('/admin/stats-dashboard') ||
+        route.startsWith('/admin/sales-analytics')) {
       return 1;
     }
-    if (route.startsWith('/admin/stores')) {
+    if (route.startsWith('/admin/support')) {
       return 2;
     }
     if (route.startsWith('/AccountPage')) {
       return 3;
     }
-    // الصفحة الافتراضية (لوحة التحكم)
+    // الصفحة الرئيسية وباقي الصفحات الفرعية المنبثقة منها تتبع التبويب الأول (الرئيسية)
     return 0;
   }
 }

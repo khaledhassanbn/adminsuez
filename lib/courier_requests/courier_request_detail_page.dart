@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:suez_admin/authentication/guards/AuthGuard.dart';
+import 'package:suez_admin/notifications/widgets/send_direct_notification_dialog.dart';
 import 'package:suez_admin/theme/app_color.dart';
 import 'services/courier_requests_service.dart';
 
@@ -153,7 +154,7 @@ class _CourierRequestDetailPageState extends State<CourierRequestDetailPage> {
               body: CustomScrollView(
                 slivers: [
                   // App Bar تفاعلي مع خلفية متدرجة وتأثير Hero للصورة الشخصية
-                  _buildSliverAppBar(context, name, status, personalPhoto),
+                  _buildSliverAppBar(context, name, status, personalPhoto, widget.requestId),
 
                   SliverToBoxAdapter(
                     child: Padding(
@@ -232,7 +233,13 @@ class _CourierRequestDetailPageState extends State<CourierRequestDetailPage> {
     );
   }
 
-  Widget _buildSliverAppBar(BuildContext context, String name, String status, String photoUrl) {
+  Widget _buildSliverAppBar(
+    BuildContext context,
+    String name,
+    String status,
+    String photoUrl,
+    String requestId,
+  ) {
     return SliverAppBar(
       expandedHeight: 220,
       pinned: true,
@@ -241,6 +248,18 @@ class _CourierRequestDetailPageState extends State<CourierRequestDetailPage> {
         icon: const Icon(Icons.arrow_back, color: Colors.white),
         onPressed: () => Navigator.of(context).pop(),
       ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_active_outlined, color: Colors.white),
+          tooltip: 'إرسال إشعار',
+          onPressed: () => SendDirectNotificationDialog.show(
+            context,
+            targetUserId: requestId,
+            targetUserName: name,
+            targetUserType: 'driver',
+          ),
+        ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         centerTitle: true,
         titlePadding: const EdgeInsets.only(bottom: 16),

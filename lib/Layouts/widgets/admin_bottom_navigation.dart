@@ -16,19 +16,19 @@ class AdminBottomNavigation extends StatelessWidget {
       unselectedItemColor: Colors.grey,
       items: const [
         BottomNavigationBarItem(
-          icon: Icon(Icons.dashboard_outlined),
-          activeIcon: Icon(Icons.dashboard),
-          label: 'لوحة التحكم',
+          icon: Icon(Icons.home_outlined),
+          activeIcon: Icon(Icons.home),
+          label: 'الرئيسية',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.card_giftcard_outlined),
-          activeIcon: Icon(Icons.card_giftcard),
-          label: 'الباقات',
+          icon: Icon(Icons.analytics_outlined),
+          activeIcon: Icon(Icons.analytics),
+          label: 'الإحصائيات',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.store_outlined),
-          activeIcon: Icon(Icons.store),
-          label: 'المتاجر',
+          icon: Icon(Icons.support_agent_outlined),
+          activeIcon: Icon(Icons.support_agent),
+          label: 'الدعم الفني',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.person_outline),
@@ -44,25 +44,21 @@ class AdminBottomNavigation extends StatelessWidget {
 
     switch (index) {
       case 0:
-        // لوحة التحكم
+        // الرئيسية
         if (currentRoute != '/admin/dashboard') {
           context.go('/admin/dashboard');
         }
         break;
       case 1:
-        // الباقات
-        if (!currentRoute.startsWith('/admin/manage-packages') &&
-            !currentRoute.startsWith('/admin/create-package') &&
-            !currentRoute.startsWith('/admin/manage-categories') &&
-            !currentRoute.startsWith('/admin/create-category') &&
-            !currentRoute.startsWith('/admin/edit-category')) {
-          context.go('/admin/manage-packages');
+        // الإحصائيات
+        if (currentRoute != '/admin/stats-dashboard') {
+          context.go('/admin/stats-dashboard');
         }
         break;
       case 2:
-        // المتاجر
-        if (!currentRoute.startsWith('/admin/stores')) {
-          context.go('/admin/stores');
+        // الدعم الفني
+        if (!currentRoute.startsWith('/admin/support')) {
+          context.go('/admin/support');
         }
         break;
       case 3:

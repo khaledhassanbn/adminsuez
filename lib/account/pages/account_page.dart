@@ -127,9 +127,7 @@ class _AccountPageState extends State<AccountPage> {
               // Header
               _buildHeader(displayName, email, avatar),
               const SizedBox(height: 24),
-              // Admin sections
-              _buildAdminSection(),
-              const SizedBox(height: 16),
+
               // App info section
               _buildInfoSection(),
               const SizedBox(height: 24),
@@ -240,128 +238,6 @@ class _AccountPageState extends State<AccountPage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildAdminSection() {
-    return _SectionCard(
-      title: 'لوحة الأدمن',
-      tiles: [
-        _MenuTileData(
-          icon: Icons.dashboard_rounded,
-          label: 'لوحة التحكم',
-          subtitle: 'عرض الإحصائيات والبيانات',
-          onTap: () => context.go('/admin/dashboard'),
-        ),
-        _MenuTileData(
-          icon: Icons.card_giftcard_rounded,
-          label: 'إدارة الباقات',
-          subtitle: 'عرض وتعديل وحذف الباقات',
-          onTap: () => context.go('/admin/manage-packages'),
-        ),
-        _MenuTileData(
-          icon: Icons.store_rounded,
-          label: 'قائمة المتاجر',
-          subtitle: 'عرض جميع المتاجر ومعلوماتها',
-          onTap: () => context.go('/admin/stores'),
-        ),
-        _MenuTileData(
-          icon: Icons.category_rounded,
-          label: 'إدارة الفئات',
-          subtitle: 'إضافة وتعديل وحذف الفئات',
-          onTap: () => context.go('/admin/manage-categories'),
-        ),
-        _MenuTileData(
-          icon: Icons.photo_library_rounded,
-          label: 'إدارة الإعلانات',
-          subtitle: 'تحكم في إعلانات الصفحة الرئيسية',
-          onTap: () => context.go('/admin/ads'),
-        ),
-        _MenuTileData(
-          icon: Icons.request_quote_rounded,
-          label: 'طلبات الإعلانات',
-          subtitle: 'عرض وإدارة طلبات الإعلانات',
-          onTap: () => context.go('/admin/ad-requests'),
-        ),
-        _MenuTileData(
-          icon: Icons.business_rounded,
-          label: 'إدارة المكاتب',
-          subtitle: 'عرض وإدارة مكاتب التوصيل',
-          onTap: () => context.go('/admin/offices'),
-        ),
-        _MenuTileData(
-          icon: Icons.delivery_dining_rounded,
-          label: 'رسوم التوصيل',
-          subtitle: 'إعدادات حساب رسوم التوصيل',
-          onTap: () => context.go('/admin/delivery-fee-settings'),
-        ),
-        _MenuTileData(
-          icon: Icons.payments_outlined,
-          label: 'عمولة التطبيق',
-          subtitle: 'رسوم الخدمة لكل المتاجر — زر حفظ واحد',
-          onTap: () => context.go('/admin/commission-settings'),
-        ),
-        _MenuTileData(
-          icon: Icons.account_balance_wallet_outlined,
-          label: 'إدارة طلبات الشحن',
-          subtitle: 'الموافقة على شحن محافظ التجار',
-          onTap: () => context.go('/admin/wallet-management'),
-        ),
-        _MenuTileData(
-          icon: Icons.account_balance_rounded,
-          label: 'الإدارة المالية',
-          subtitle: 'سجل موحد لكل الحركات المالية مع بحث وفلاتر',
-          onTap: () => context.go('/admin/finance-ledger'),
-        ),
-        _MenuTileData(
-          icon: Icons.manage_search_rounded,
-          label: 'البحث عن الطلبات',
-          subtitle: 'بحث برقم الطلب وعرض تفاصيله وسجل حالاته',
-          onTap: () => context.go('/admin/order-lookup'),
-        ),
-        _MenuTileData(
-          icon: Icons.receipt_rounded,
-          label: 'البحث عن الفواتير',
-          subtitle: 'بحث برقم الفاتورة وعرض تفاصيلها',
-          onTap: () => context.go('/admin/invoice-lookup'),
-        ),
-        _MenuTileData(
-          icon: Icons.motorcycle_rounded,
-          label: 'طلبات تسجيل المناديب',
-          subtitle: 'مراجعة وقبول أو رفض طلبات المناديب الجدد',
-          onTap: () => context.go('/admin/courier-requests'),
-        ),
-        _MenuTileData(
-          icon: Icons.report_gmailerrorred_rounded,
-          label: 'إدارة البلاغات',
-          subtitle: 'مراجعة البلاغات المقدمة من المستخدمين',
-          onTap: () => context.go('/admin/reports'),
-        ),
-        _MenuTileData(
-          icon: Icons.support_agent_rounded,
-          label: 'مركز الدعم',
-          subtitle: 'إدارة محادثات الدعم الفني والرد عليها',
-          onTap: () => context.go('/admin/support'),
-        ),
-        _MenuTileData(
-          icon: Icons.admin_panel_settings_rounded,
-          label: 'إدارة المسؤولين',
-          subtitle: 'تعيين صلاحيات المسؤولين والمشرفين',
-          onTap: () => context.go('/admin/roles'),
-        ),
-        _MenuTileData(
-          icon: Icons.delete_sweep_rounded,
-          label: 'الحسابات المحذوفة',
-          subtitle: 'استعراض واستعادة الحسابات المحذوفة مؤقتاً',
-          onTap: () => context.go('/admin/deleted-accounts'),
-        ),
-        _MenuTileData(
-          icon: Icons.history_rounded,
-          label: 'سجلات النشاط',
-          subtitle: 'عرض سجل العمليات والنشاطات الإدارية',
-          onTap: () => context.go('/admin/activity-logs'),
-        ),
-      ],
     );
   }
 

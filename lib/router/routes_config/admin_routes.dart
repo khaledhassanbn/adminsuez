@@ -5,6 +5,7 @@ import 'package:suez_admin/stores/stores_list_page.dart';
 import 'package:suez_admin/categories/manage_categories_page.dart';
 import 'package:suez_admin/categories/create_edit_category_page.dart';
 import 'package:suez_admin/dashboard/dashboard_page.dart';
+import 'package:suez_admin/dashboard/stats_dashboard_page.dart';
 import 'package:suez_admin/dashboard/sales_analytics_page.dart';
 import 'package:suez_admin/ads/views/admin_ads_page.dart';
 import 'package:suez_admin/ads/views/admin_ad_requests_page.dart';
@@ -31,6 +32,14 @@ import 'package:suez_admin/orders/pages/order_lookup_page.dart';
 import 'package:suez_admin/orders/pages/store_dashboard_page.dart';
 import 'package:suez_admin/orders/pages/invoice_lookup_page.dart';
 
+// 🔔 الإشعارات والإعلانات
+import 'package:suez_admin/notifications/pages/notifications_dashboard_page.dart';
+import 'package:suez_admin/notifications/pages/create_announcement_page.dart';
+import 'package:suez_admin/notifications/pages/announcements_history_page.dart';
+import 'package:suez_admin/notifications/pages/announcement_detail_page.dart';
+import 'package:suez_admin/promotional_popups/pages/popups_list_page.dart';
+import 'package:suez_admin/promotional_popups/pages/create_edit_popup_page.dart';
+
 import 'package:go_router/go_router.dart';
 
 import 'package:provider/provider.dart';
@@ -46,6 +55,10 @@ final adminRoutes = [
   GoRoute(
     path: '/admin/dashboard',
     builder: (context, state) => const DashboardPage(),
+  ),
+  GoRoute(
+    path: '/admin/stats-dashboard',
+    builder: (context, state) => const StatsDashboardPage(),
   ),
   GoRoute(
     path: '/admin/sales-analytics',
@@ -210,6 +223,48 @@ final adminRoutes = [
     builder: (context, state) {
       final number = state.uri.queryParameters['number'];
       return InvoiceLookupPage(initialNumber: number);
+    },
+  ),
+
+  // ═══════════════════════════════════════════════════
+  // 🔔 إدارة الإشعارات والإعلانات
+  // ═══════════════════════════════════════════════════
+  GoRoute(
+    path: '/admin/notifications',
+    builder: (context, state) => const NotificationsDashboardPage(),
+  ),
+  GoRoute(
+    path: '/admin/notifications/create',
+    builder: (context, state) => const CreateAnnouncementPage(),
+  ),
+  GoRoute(
+    path: '/admin/notifications/history',
+    builder: (context, state) => const AnnouncementsHistoryPage(),
+  ),
+  GoRoute(
+    path: '/admin/notifications/:announcementId',
+    builder: (context, state) {
+      final announcementId = state.pathParameters['announcementId']!;
+      return AnnouncementDetailPage(announcementId: announcementId);
+    },
+  ),
+
+  // ═══════════════════════════════════════════════════
+  // 🎯 الإعلانات المنبثقة
+  // ═══════════════════════════════════════════════════
+  GoRoute(
+    path: '/admin/promotional-popups',
+    builder: (context, state) => const PopupsListPage(),
+  ),
+  GoRoute(
+    path: '/admin/promotional-popups/create',
+    builder: (context, state) => const CreateEditPopupPage(),
+  ),
+  GoRoute(
+    path: '/admin/promotional-popups/:popupId',
+    builder: (context, state) {
+      final popupId = state.pathParameters['popupId']!;
+      return CreateEditPopupPage(popupId: popupId);
     },
   ),
 ];

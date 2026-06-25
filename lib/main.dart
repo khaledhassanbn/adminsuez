@@ -15,6 +15,10 @@ import 'authentication/guards/AuthGuard.dart';
 import 'authentication/viewModel/AuthViewModel.dart';
 import 'support/viewmodels/admin_support_viewmodel.dart';
 
+// 🔔 إشعارات وإعلانات
+import 'notifications/viewmodels/announcement_viewmodel.dart';
+import 'promotional_popups/viewmodels/promotional_popup_viewmodel.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -67,6 +71,8 @@ class _SuezAdminAppState extends State<SuezAdminApp> {
         ChangeNotifierProvider(create: (_) => _authGuard),
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
         ChangeNotifierProvider(create: (_) => AdminSupportViewModel()),
+        ChangeNotifierProvider(create: (_) => AnnouncementViewModel()),
+        ChangeNotifierProvider(create: (_) => PromotionalPopupViewModel()),
         ChangeNotifierProvider<ConnectionService>.value(
           value: _connectionService,
         ),

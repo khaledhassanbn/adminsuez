@@ -1,0 +1,913 @@
+# نظام إدارة الإشعارات والإعلانات الاحترافي (v2)
+
+نظام شامل لإدارة الإشعارات والإعلانات داخل تطبيق الأدمن (`suez_admin`) مع مركز رسائل داخلي في تطبيقات المستخدمين (`temp_bazar` + `bazaarsuezdriver`). يعتمد على Firebase Cloud Messaging (FCM) + Firestore مع Cloud Functions للإرسال الجماعي.
+
+> [!NOTE]
+> **التعديلات عن النسخة السابقة:**
+> 1. ✅ إلغاء `delivery_logs` الفردية → إحصائيات مجمعة فقط
+> 2. ✅ إعادة تصميم مركز الرسائل → تخزين مركزي بدلاً من نسخ لكل مستخدم
+> 3. ✅ إلغاء تتبع فتح Push Notification
+> 4. ✅ إضافة نظام القوالب الجاهزة (Templates)
+> 5. ✅ إضافة نظام الإعلانات المنبثقة (In-App Promotional Popups)
+> 6. ✅ إضافة الإرسال الفردي من صفحات تفاصيل المستخدمين
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Cloud Functions مطلوبة**: الإرسال الجماعي لـ FCM يتطلب Cloud Functions (Node.js) على Firebase. هل لديك مشروع Cloud Functions قائم (مجلد `functions/`)؟ وأين موقعه؟
+
+> [!IMPORTANT]
+> **منطقة Cloud Functions**: المشروع الحالي يستخدم `europe-west1` في [admin_management_service.dart](file:///d:/project/suezadmin/suez_admin/lib/security/services/admin_management_service.dart). هل نستمر على نفس المنطقة؟
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. **Firebase Project**: هل تطبيقات الأدمن والمستخدمين والمناديب تشترك في نفس مشروع Firebase؟
+> 2. **مجلد Cloud Functions**: هل يوجد مجلد `functions/` موجود فعلاً؟ وإذا لا، هل تريد إنشاءه ضمن هذه الخطة؟
+> 3. **مكاتب المناديب**: المطلوب استهداف "مكاتب المناديب فقط" — هل يتم تحديد المكتب من collection `offices` والمناديب المرتبطين بالمكتب من حقل `officeId` في `courier_requests`؟
+> 4. **Firebase Storage**: لرفع صور البانر — هل نستخدم `firebase_storage` الموجود بالفعل في المشروع؟
+
+---
+
+## Proposed Changes
+
+---
+
+### المرحلة 1: هيكل قاعدة البيانات (Firestore Collections)
+
+#### Firestore Schema Design
+
+```
+📦 Firestore Collections
+│
+├── 📁 announcements/                          ← الإعلانات والإشعارات (تخزين مركزي)
+│   └── {announcementId}
+│       ├── title: string                       ← عنوان الإعلان
+│       ├── body: string                        ← نص الإعلان
+│       ├── imageUrl: string?                   ← رابط صورة/بانر اختياري
+│       ├── deliveryType: string                ← 'push_only' | 'in_app_only' | 'both'
+│       ├── targetAudience: string              ← 'all' | 'merchants' | 'craftsmen' | 'offices' |
+│       │                                          'drivers' | 'customers' | 'custom' | 'individual'
+│       ├── targetUserId: string?               ← uid المستخدم (فقط عند targetAudience == 'individual')
+│       ├── targetUserName: string?             ← اسم المستخدم المستهدف (للعرض في السجل)
+│       ├── targetUserType: string?             ← نوع المستخدم المستهدف (merchant/craftsman/driver/customer)
+│       ├── targetFilter: map?                  ← فلاتر مخصصة مستقبلية {city, region, ...}
+│       ├── templateId: string?                 ← مرجع للقالب المُستخدم (إن وجد)
+│       ├── cta: map?                           ← Call To Action
+│       │   ├── type: string                    ← 'open_page' | 'open_store' | 'open_order' |
+│       │   │                                      'open_product' | 'external_link'
+│       │   ├── label: string                   ← نص الزر
+│       │   └── value: string                   ← المعرف أو الرابط
+│       ├── status: string                      ← 'draft' | 'scheduled' | 'sending' | 'sent' |
+│       │                                          'failed' | 'partial'
+│       ├── scheduledAt: timestamp?             ← وقت الإرسال المجدول (null = فوري)
+│       ├── sentAt: timestamp?                  ← وقت الإرسال الفعلي
+│       ├── createdAt: timestamp
+│       ├── createdBy: string                   ← uid الأدمن المنشئ
+│       ├── createdByName: string               ← اسم الأدمن
+│       ├── idempotencyKey: string              ← مفتاح فريد لمنع تكرار الإرسال
+│       │
+│       └── 📊 stats: map                       ← إحصائيات مجمعة فقط (بدون logs فردية)
+│           ├── targetedCount: int              ← عدد المستهدفين
+│           ├── pushSentCount: int              ← عدد الإشعارات المرسلة بنجاح
+│           ├── pushFailedCount: int            ← عدد الفاشلة
+│           └── inAppReadCount: int             ← عدد مرات القراءة داخل التطبيق
+│
+├── 📁 announcement_error_logs/                ← تسجيل الأخطاء فقط (وليس كل عملية)
+│   └── {logId}
+│       ├── announcementId: string
+│       ├── errorType: string                   ← 'fcm_send_failed' | 'token_invalid' | 'batch_error'
+│       ├── errorMessage: string
+│       ├── failedTokensCount: int              ← عدد التوكنات الفاشلة في هذا الـ batch
+│       ├── sampleFailedTokens: array[string]   ← عينة من التوكنات الفاشلة (أول 5 فقط)
+│       └── timestamp: timestamp
+│
+├── 📁 announcement_templates/                 ← القوالب الجاهزة
+│   └── {templateId}
+│       ├── name: string                        ← اسم القالب (للأدمن)
+│       ├── title: string                       ← عنوان القالب
+│       ├── body: string                        ← نص القالب (يدعم متغيرات مثل {{userName}})
+│       ├── imageUrl: string?                   ← صورة افتراضية
+│       ├── cta: map?                           ← CTA افتراضي
+│       ├── category: string                    ← 'welcome' | 'renewal' | 'suspension' |
+│       │                                          'order' | 'promotion' | 'custom'
+│       ├── isActive: bool                      ← مفعّل/معطّل
+│       ├── usageCount: int                     ← عدد مرات الاستخدام
+│       ├── createdAt: timestamp
+│       ├── updatedAt: timestamp
+│       └── createdBy: string
+│
+├── 📁 promotional_popups/                     ← الإعلانات المنبثقة داخل التطبيق
+│   └── {popupId}
+│       ├── title: string?                      ← عنوان اختياري
+│       ├── description: string?                ← وصف اختياري
+│       ├── imageUrl: string                    ← صورة الإعلان (إجبارية)
+│       ├── cta: map?                           ← إجراء عند الضغط
+│       │   ├── type: string                    ← 'open_store' | 'open_product' | 'open_order' |
+│       │   │                                      'open_page' | 'external_link'
+│       │   └── value: string
+│       ├── targetAudience: string              ← 'all' | 'merchants' | 'craftsmen' | 'drivers' | 'customers'
+│       ├── isActive: bool                      ← مفعّل/معطّل
+│       ├── priority: int                       ← الأولوية (الأعلى يظهر أولاً)
+│       ├── startDate: timestamp                ← تاريخ بداية الظهور
+│       ├── endDate: timestamp                  ← تاريخ انتهاء الظهور
+│       ├── maxImpressions: int                 ← الحد الأقصى لمرات الظهور لكل مستخدم (0 = بلا حد)
+│       ├── isDismissible: bool                 ← هل يمكن للمستخدم إغلاقه
+│       ├── createdAt: timestamp
+│       ├── updatedAt: timestamp
+│       └── createdBy: string
+│
+└── 📁 announcement_admin_logs/                ← سجل العمليات الإدارية
+    └── {logId}
+        ├── announcementId: string
+        ├── action: string                      ← 'created' | 'sent' | 'scheduled' | 'cancelled'
+        ├── adminUid: string
+        ├── adminName: string
+        ├── details: map
+        └── timestamp: timestamp
+```
+
+---
+
+#### تصميم مركز الرسائل — النهج الأمثل
+
+> [!TIP]
+> **الفلسفة: تخزين مركزي + تتبع قراءة محلي خفيف**
+>
+> بدلاً من نسخ كل رسالة في صندوق كل مستخدم (آلاف الـ writes)، نعتمد على:
+> 1. **الإعلانات مخزّنة مرة واحدة** في `announcements/`
+> 2. **التطبيق يستعلم** عن الإعلانات المطابقة لنوع المستخدم (`targetAudience`)
+> 3. **تتبع القراءة محلياً** عبر `SharedPreferences` / `Hive` (قائمة معرفات الإعلانات المقروءة)
+> 4. **عداد القراءات على السيرفر** عبر `FieldValue.increment(1)` ذري على `stats.inAppReadCount`
+
+**كيف يعمل الاستعلام على جانب التطبيق:**
+
+```dart
+// مثال: مستخدم نوعه 'merchant'
+// جلب الإعلانات التي تستهدفه (all أو merchants) وحالتها sent
+FirebaseFirestore.instance
+    .collection('announcements')
+    .where('status', isEqualTo: 'sent')
+    .where('targetAudience', whereIn: ['all', 'merchants'])
+    .orderBy('sentAt', descending: true)
+    .limit(50)
+    .snapshots();
+
+// الرسائل الفردية الموجهة لهذا المستخدم تحديداً
+FirebaseFirestore.instance
+    .collection('announcements')
+    .where('status', isEqualTo: 'sent')
+    .where('targetAudience', isEqualTo: 'individual')
+    .where('targetUserId', isEqualTo: currentUserId)
+    .orderBy('sentAt', descending: true)
+    .snapshots();
+```
+
+**تتبع القراءة:**
+```dart
+// محلياً — SharedPreferences
+final readIds = prefs.getStringList('read_announcements') ?? [];
+final isRead = readIds.contains(announcementId);
+
+// عند القراءة لأول مرة:
+readIds.add(announcementId);
+prefs.setStringList('read_announcements', readIds);
+// + increment ذري على السيرفر (عملية كتابة واحدة فقط)
+FirebaseFirestore.instance
+    .collection('announcements').doc(announcementId)
+    .update({'stats.inAppReadCount': FieldValue.increment(1)});
+```
+
+**المزايا:**
+| المعيار | النهج القديم (user_inbox) | النهج الجديد (مركزي) |
+|---------|--------------------------|---------------------|
+| عمليات كتابة لإعلان واحد لـ 10,000 مستخدم | **10,001** (1 إعلان + 10,000 inbox) | **1** (إعلان واحد فقط) |
+| تكلفة Firestore writes | مرتفعة جداً | **صفر تقريباً** |
+| استعلام القراءة | `user_inbox/{uid}/messages` | `announcements` مع `whereIn` |
+| تتبع القراءة | Firestore write لكل قراءة | **محلي** + increment ذري واحد |
+| التوسع المستقبلي | كل مستخدم جديد = مستندات جديدة | **بدون تغيير** |
+
+> [!NOTE]
+> **القيد الوحيد**: `whereIn` في Firestore يدعم حتى 30 قيمة — كافية لأنواع المستخدمين المتاحة. للإعلانات الفردية (`individual`) نستخدم query منفصل مع `targetUserId`.
+
+> [!TIP]
+> **تنظيف البيانات المحلية**: نضيف job بسيط يحذف IDs القراءة الأقدم من 90 يوماً من `SharedPreferences` لمنع تراكم البيانات.
+
+---
+
+### المرحلة 2: Cloud Functions (Backend)
+
+---
+
+#### [NEW] `functions/src/notifications/sendAnnouncement.ts`
+
+Cloud Function قابلة للاستدعاء (callable) من تطبيق الأدمن:
+
+**المسؤوليات:**
+1. **التحقق من صلاحيات الأدمن** (Auth + Custom Claims)
+2. **فحص `idempotencyKey`** لمنع تكرار الإرسال عند إعادة المحاولة
+3. **جمع FCM Tokens** حسب `targetAudience`:
+   - `all`: جلب tokens من `users` + `courier_requests`
+   - `merchants`: فلترة `users` حيث `status == 'market_owner'`
+   - `craftsmen`: جلب tokens من `craftsmen` collection
+   - `offices`: جلب tokens من `offices` collection
+   - `drivers`: جلب tokens من `courier_requests` حيث `status == 'approved'`
+   - `customers`: فلترة `users` حيث `status != 'market_owner'` وليسوا في `craftsmen`
+   - `individual`: جلب token مباشرة من `users/{targetUserId}`
+4. **إرسال FCM Multicast** بدفعات (batches) من 500 token
+5. **تحديث إحصائيات مجمعة** في `announcements/{id}/stats`:
+   - `targetedCount` ← عدد المستخدمين المستهدفين
+   - `pushSentCount` ← عدد الإشعارات المرسلة بنجاح
+   - `pushFailedCount` ← عدد الفاشلة
+6. **تسجيل الأخطاء فقط** في `announcement_error_logs/` (عند فشل batch)
+7. **تحديث حالة الإعلان** إلى `sent` أو `partial` أو `failed`
+
+> [!IMPORTANT]
+> **لا يتم إنشاء مستندات فردية لكل مستخدم** — التطبيق يستعلم مباشرة من `announcements/` collection.
+
+#### [NEW] `functions/src/notifications/scheduledSender.ts`
+
+Pub/Sub Cron (Cloud Scheduler) كل دقيقة:
+- يبحث عن إعلانات بحالة `scheduled` و `scheduledAt <= now`
+- يستدعي `sendAnnouncement` داخلياً
+- يحدث الحالة إلى `sending` ثم `sent`
+
+#### [NEW] `functions/src/notifications/sendDirectNotification.ts`
+
+Cloud Function للإرسال الفردي (من صفحة تفاصيل المستخدم):
+- تقبل `targetUserId` + `title` + `body` + `deliveryType`
+- تجلب FCM token المستخدم من Firestore
+- ترسل Push notification إذا مطلوب
+- تنشئ مستند في `announcements/` بـ `targetAudience: 'individual'`
+
+---
+
+### المرحلة 3: تطبيق الأدمن (`suez_admin`) — الإعلانات والإشعارات
+
+---
+
+#### [NEW] `lib/notifications/models/announcement_model.dart`
+
+```dart
+class AnnouncementModel {
+  final String id;
+  final String title;
+  final String body;
+  final String? imageUrl;
+  final String deliveryType;     // push_only | in_app_only | both
+  final String targetAudience;   // all | merchants | craftsmen | offices | drivers | customers | individual
+  final String? targetUserId;    // للإرسال الفردي
+  final String? targetUserName;
+  final String? targetUserType;
+  final Map<String, dynamic>? targetFilter;
+  final String? templateId;
+  final AnnouncementCTA? cta;
+  final String status;           // draft | scheduled | sending | sent | failed | partial
+  final DateTime? scheduledAt;
+  final DateTime? sentAt;
+  final DateTime createdAt;
+  final String createdBy;
+  final String createdByName;
+  final String idempotencyKey;
+  final AnnouncementStats stats;
+}
+
+class AnnouncementCTA {
+  final String type;   // open_page | open_store | open_order | open_product | external_link
+  final String label;
+  final String value;
+}
+
+class AnnouncementStats {
+  final int targetedCount;
+  final int pushSentCount;
+  final int pushFailedCount;
+  final int inAppReadCount;
+}
+```
+
+#### [NEW] `lib/notifications/models/announcement_template_model.dart`
+
+```dart
+class AnnouncementTemplateModel {
+  final String id;
+  final String name;          // اسم القالب (للأدمن)
+  final String title;         // عنوان القالب
+  final String body;          // نص القالب (يدعم {{userName}} وغيرها)
+  final String? imageUrl;
+  final AnnouncementCTA? cta;
+  final String category;      // welcome | renewal | suspension | order | promotion | custom
+  final bool isActive;
+  final int usageCount;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+}
+```
+
+#### [NEW] `lib/notifications/services/announcement_service.dart`
+
+خدمة Firestore + Cloud Functions:
+- `createAnnouncement()` — إنشاء مسودة في Firestore
+- `sendAnnouncement(id)` — استدعاء Cloud Function للإرسال
+- `scheduleAnnouncement(id, dateTime)` — جدولة الإرسال
+- `sendDirectNotification(userId, title, body, ...)` — إرسال فردي
+- `getAnnouncementsStream({filters})` — Stream للإعلانات مع فلاتر
+- `getAnnouncementStats(id)` — إحصائيات إعلان محدد
+- `getErrorLogs(announcementId)` — سجل الأخطاء فقط
+- `uploadAnnouncementImage(file)` — رفع صورة البانر إلى Firebase Storage
+
+#### [NEW] `lib/notifications/services/template_service.dart`
+
+خدمة إدارة القوالب:
+- `createTemplate()` — إنشاء قالب جديد
+- `updateTemplate(id, data)` — تعديل قالب
+- `toggleTemplateActive(id, isActive)` — تفعيل/تعطيل
+- `getTemplatesStream()` — Stream لجميع القوالب
+- `getTemplatesByCategory(category)` — فلترة حسب التصنيف
+- `incrementUsageCount(id)` — زيادة عداد الاستخدام
+- `deleteTemplate(id)` — حذف قالب
+
+#### [NEW] `lib/notifications/viewmodels/announcement_viewmodel.dart`
+
+ViewModel يتبع نمط `ChangeNotifier` (مثل [AdminSupportViewModel](file:///d:/project/suezadmin/suez_admin/lib/support/viewmodels/admin_support_viewmodel.dart)):
+- إدارة حالة النموذج (عنوان، نص، صورة، استهداف، CTA)
+- التحقق من صحة البيانات (Validation)
+- حالة التحميل والأخطاء
+- فلاتر صفحة سجل الإعلانات
+- تحميل قالب مسبق وملء الحقول
+
+#### [NEW] `lib/notifications/viewmodels/template_viewmodel.dart`
+
+ViewModel لإدارة القوالب:
+- CRUD للقوالب
+- فلاتر حسب التصنيف والحالة
+
+#### [NEW] `lib/notifications/pages/notifications_dashboard_page.dart`
+
+صفحة لوحة تحكم الإعلانات الرئيسية:
+- إحصائيات سريعة (إجمالي الإعلانات، المرسلة اليوم، نسبة التفاعل العامة)
+- أزرار سريعة: "إنشاء إعلان" | "سجل الإعلانات" | "القوالب" | "الإعلانات المنبثقة"
+- آخر 5 إعلانات مع حالتها
+
+#### [NEW] `lib/notifications/pages/create_announcement_page.dart`
+
+نموذج إنشاء إعلان جديد:
+- **حقل اختيار القالب** (اختياري — Dropdown بالقوالب المفعّلة) ← يملأ الحقول تلقائياً
+- حقل العنوان (إجباري)
+- حقل النص (إجباري)
+- رفع صورة/بانر (اختياري) باستخدام `image_picker`
+- اختيار نوع الإرسال (Push فقط / رسالة داخلية فقط / كلاهما)
+- اختيار الفئة المستهدفة (Dropdown مع أيقونات)
+- إعداد CTA اختياري (نوع الإجراء + القيمة)
+- اختيار وقت الإرسال (فوري / مجدول مع DateTimePicker)
+- زر "إرسال" مع تأكيد
+
+#### [NEW] `lib/notifications/pages/announcements_history_page.dart`
+
+سجل الإعلانات المرسلة:
+- قائمة بجميع الإعلانات مع:
+  - عنوان الإعلان
+  - تاريخ ووقت الإرسال
+  - الفئة المستهدفة (مع badge ملون)
+  - نوع الإرسال (أيقونة)
+  - حالة الإرسال (مع لون)
+- فلاتر: حسب الحالة، الفئة المستهدفة، نطاق زمني
+- Pagination لتحسين الأداء
+
+#### [NEW] `lib/notifications/pages/announcement_detail_page.dart`
+
+تفاصيل الإعلان + الإحصائيات:
+- معاينة الإعلان كما يراه المستخدم
+- إحصائيات بصرية (Cards):
+  - عدد المستهدفين
+  - عدد الإشعارات المرسلة بنجاح
+  - عدد الفاشلة
+  - عدد القراءات الداخلية
+- عرض الأخطاء (من `announcement_error_logs/`) إن وجدت
+
+#### [NEW] `lib/notifications/pages/templates_page.dart`
+
+صفحة إدارة القوالب:
+- قائمة بجميع القوالب مع:
+  - اسم القالب
+  - التصنيف (badge ملون)
+  - حالة التفعيل (switch)
+  - عدد مرات الاستخدام
+- زر "إنشاء قالب جديد"
+- فلاتر: حسب التصنيف، الحالة
+
+#### [NEW] `lib/notifications/pages/create_edit_template_page.dart`
+
+نموذج إنشاء/تعديل قالب:
+- اسم القالب (للأدمن فقط)
+- التصنيف (welcome / renewal / suspension / order / promotion / custom)
+- عنوان القالب
+- نص القالب (مع دعم متغيرات مثل `{{userName}}`, `{{storeName}}`)
+- صورة افتراضية (اختياري)
+- CTA افتراضي (اختياري)
+- تفعيل/تعطيل
+
+#### [NEW] `lib/notifications/widgets/`
+
+ويدجيتات مشتركة:
+- `announcement_card.dart` — بطاقة إعلان في القائمة
+- `audience_selector.dart` — اختيار الفئة المستهدفة
+- `delivery_type_selector.dart` — اختيار نوع الإرسال
+- `cta_builder.dart` — بناء زر الإجراء
+- `announcement_stats_card.dart` — بطاقة إحصائيات
+- `schedule_picker.dart` — اختيار وقت الإرسال
+- `template_selector.dart` — اختيار قالب جاهز
+- `template_card.dart` — بطاقة قالب في القائمة
+- `send_direct_notification_dialog.dart` — حوار إرسال إشعار فردي
+
+---
+
+### المرحلة 4: نظام الإعلانات المنبثقة — الأدمن (`suez_admin`)
+
+---
+
+#### [NEW] `lib/promotional_popups/models/promotional_popup_model.dart`
+
+```dart
+class PromotionalPopupModel {
+  final String id;
+  final String? title;
+  final String? description;
+  final String imageUrl;            // إجبارية
+  final PromotionalPopupCTA? cta;
+  final String targetAudience;      // all | merchants | craftsmen | drivers | customers
+  final bool isActive;
+  final int priority;               // الأعلى يظهر أولاً
+  final DateTime startDate;
+  final DateTime endDate;
+  final int maxImpressions;         // 0 = بلا حد
+  final bool isDismissible;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdBy;
+}
+
+class PromotionalPopupCTA {
+  final String type;   // open_store | open_product | open_order | open_page | external_link
+  final String value;
+}
+```
+
+#### [NEW] `lib/promotional_popups/services/promotional_popup_service.dart`
+
+- `createPopup()` — إنشاء إعلان منبثق جديد
+- `updatePopup(id, data)` — تعديل
+- `togglePopupActive(id, isActive)` — تفعيل/تعطيل
+- `deletePopup(id)` — حذف
+- `getPopupsStream()` — Stream لجميع الإعلانات المنبثقة
+- `uploadPopupImage(file)` — رفع صورة الإعلان
+
+#### [NEW] `lib/promotional_popups/viewmodels/promotional_popup_viewmodel.dart`
+
+ViewModel بنمط `ChangeNotifier`
+
+#### [NEW] `lib/promotional_popups/pages/popups_list_page.dart`
+
+قائمة الإعلانات المنبثقة مع:
+- صورة مصغرة
+- العنوان
+- الفئة المستهدفة
+- تواريخ البداية/الانتهاء
+- الأولوية
+- حالة التفعيل (switch)
+- زر إنشاء جديد
+
+#### [NEW] `lib/promotional_popups/pages/create_edit_popup_page.dart`
+
+نموذج إنشاء/تعديل إعلان منبثق:
+- رفع صورة الإعلان (إجبارية)
+- عنوان ووصف اختياريان
+- اختيار نوع الإجراء عند الضغط (CTA)
+- الفئة المستهدفة
+- تاريخ البداية والانتهاء (DatePicker)
+- الحد الأقصى لمرات الظهور (0 = بلا حد)
+- الأولوية (رقم)
+- قابل للإغلاق (switch)
+- تفعيل/تعطيل (switch)
+
+---
+
+### المرحلة 5: تعديلات تطبيق الأدمن — الربط والتوجيه
+
+---
+
+#### [MODIFY] [admin_routes.dart](file:///d:/project/suezadmin/suez_admin/lib/router/routes_config/admin_routes.dart)
+
+إضافة مسارات الإعلانات + القوالب + الإعلانات المنبثقة:
+```dart
+// إدارة الإشعارات والإعلانات
+GoRoute(path: '/admin/notifications', builder: (_, __) => const NotificationsDashboardPage()),
+GoRoute(path: '/admin/notifications/create', builder: (_, __) => const CreateAnnouncementPage()),
+GoRoute(path: '/admin/notifications/history', builder: (_, __) => const AnnouncementsHistoryPage()),
+GoRoute(path: '/admin/notifications/:announcementId', builder: (_, state) {
+  return AnnouncementDetailPage(announcementId: state.pathParameters['announcementId']!);
+}),
+// القوالب
+GoRoute(path: '/admin/notifications/templates', builder: (_, __) => const TemplatesPage()),
+GoRoute(path: '/admin/notifications/templates/create', builder: (_, __) => const CreateEditTemplatePage()),
+GoRoute(path: '/admin/notifications/templates/:templateId', builder: (_, state) {
+  return CreateEditTemplatePage(templateId: state.pathParameters['templateId']);
+}),
+// الإعلانات المنبثقة
+GoRoute(path: '/admin/promotional-popups', builder: (_, __) => const PopupsListPage()),
+GoRoute(path: '/admin/promotional-popups/create', builder: (_, __) => const CreateEditPopupPage()),
+GoRoute(path: '/admin/promotional-popups/:popupId', builder: (_, state) {
+  return CreateEditPopupPage(popupId: state.pathParameters['popupId']);
+}),
+```
+
+#### [MODIFY] [dashboard_page.dart](file:///d:/project/suezadmin/suez_admin/lib/dashboard/dashboard_page.dart)
+
+إضافة قسم "الإشعارات والتواصل" في `_buildMenuCategories()`:
+```dart
+_MenuCategory(
+  name: 'الإشعارات والتواصل',
+  icon: Icons.notifications_active_outlined,
+  items: [
+    _MenuPageItem(
+      title: 'إدارة الإشعارات والإعلانات',
+      icon: Icons.campaign_rounded,
+      route: '/admin/notifications',
+      color: const Color(0xFFFF6B35),
+    ),
+    _MenuPageItem(
+      title: 'الإعلانات المنبثقة',
+      icon: Icons.featured_play_list_rounded,
+      route: '/admin/promotional-popups',
+      color: const Color(0xFFE91E63),
+    ),
+  ],
+),
+```
+
+#### [MODIFY] [main.dart](file:///d:/project/suezadmin/suez_admin/lib/main.dart)
+
+إضافة ViewModels إلى `MultiProvider`:
+```dart
+ChangeNotifierProvider(create: (_) => AnnouncementViewModel()),
+ChangeNotifierProvider(create: (_) => TemplateViewModel()),
+ChangeNotifierProvider(create: (_) => PromotionalPopupViewModel()),
+```
+
+#### [NEW] `lib/notifications/widgets/send_direct_notification_dialog.dart`
+
+حوار إرسال إشعار فردي — يُستخدم من صفحات تفاصيل المستخدمين:
+```dart
+class SendDirectNotificationDialog extends StatefulWidget {
+  final String targetUserId;
+  final String targetUserName;
+  final String targetUserType; // merchant | craftsman | driver | customer
+  // ...
+}
+```
+
+يحتوي على:
+- حقل العنوان
+- حقل النص
+- اختيار قالب جاهز (اختياري)
+- اختيار نوع الإرسال (Push / رسالة داخلية / كلاهما)
+- زر إرسال
+
+#### تعديلات صفحات التفاصيل الموجودة (الإرسال الفردي)
+
+سيتم إضافة **زر "إرسال إشعار"** في كل صفحة تفاصيل مستخدم:
+
+| الصفحة | الملف | التعديل |
+|--------|------|--------|
+| تفاصيل المتجر | `lib/stores/` (الصفحة المناسبة) | إضافة زر يفتح `SendDirectNotificationDialog` |
+| تفاصيل المكتب | [office_detail_page.dart](file:///d:/project/suezadmin/suez_admin/lib/offices/office_detail_page.dart) | إضافة زر في AppBar أو FAB |
+| تفاصيل طلب المندوب | [courier_request_detail_page.dart](file:///d:/project/suezadmin/suez_admin/lib/courier_requests/courier_request_detail_page.dart) | إضافة زر |
+| تفاصيل البلاغ | [report_detail_page.dart](file:///d:/project/suezadmin/suez_admin/lib/reports/pages/report_detail_page.dart) | إضافة زر لإرسال إشعار لصاحب البلاغ |
+
+---
+
+### المرحلة 6: مركز الرسائل في تطبيق المستخدمين (`temp_bazar`)
+
+---
+
+#### [NEW] `lib/notifications/models/inbox_message_model.dart`
+
+نموذج خفيف يُبنى من `AnnouncementModel` + حالة القراءة المحلية:
+```dart
+class InboxMessageModel {
+  final String id;             // = announcementId
+  final String title;
+  final String body;
+  final String? imageUrl;
+  final AnnouncementCTA? cta;
+  final DateTime sentAt;
+  final bool isRead;           // من SharedPreferences محلياً
+}
+```
+
+#### [NEW] `lib/notifications/services/inbox_service.dart`
+
+- `getInboxMessages(userType)` — Stream من `announcements/` مع فلترة `targetAudience`
+- `getDirectMessages(userId)` — Stream للرسائل الفردية الموجهة لهذا المستخدم
+- `markAsRead(announcementId)` — تسجيل محلي + `increment(1)` ذري
+- `getUnreadCount(userType, userId)` — حساب غير المقروءة (مقارنة Stream مع القائمة المحلية)
+- `cleanupOldReadIds()` — تنظيف IDs القراءة الأقدم من 90 يوماً
+
+#### [NEW] `lib/notifications/viewmodels/inbox_viewmodel.dart`
+
+ViewModel بنمط `ChangeNotifier`:
+- Stream مدمج (إعلانات عامة + رسائل فردية)
+- عداد غير المقروءة
+- عمليات القراءة
+- تحميل مبدئي للقائمة المحلية
+
+#### [NEW] `lib/notifications/pages/inbox_page.dart`
+
+صفحة مركز الرسائل:
+- AppBar بعنوان "الرسائل والإعلانات" مع badge للغير مقروءة
+- قائمة الرسائل مع:
+  - عنوان الرسالة
+  - مقتطف من النص
+  - صورة مصغرة (إن وجدت)
+  - حالة القراءة (نقطة ملونة — من التخزين المحلي)
+  - التاريخ
+
+#### [NEW] `lib/notifications/pages/message_detail_page.dart`
+
+صفحة تفاصيل الرسالة:
+- العنوان والنص الكامل
+- الصورة/البانر (full-width)
+- زر CTA (إن وجد)
+- التاريخ
+- تعليم كمقروءة تلقائياً عند الفتح
+
+#### [NEW] `lib/notifications/widgets/inbox_badge.dart`
+
+Badge يظهر عدد الرسائل غير المقروءة.
+
+#### [NEW] `lib/notifications/services/popup_display_service.dart`
+
+خدمة عرض الإعلانات المنبثقة عند فتح التطبيق:
+- استعلام `promotional_popups` حيث `isActive == true` و `startDate <= now` و `endDate >= now`
+- فلترة حسب `targetAudience` ونوع المستخدم
+- فحص عدد مرات الظهور من التخزين المحلي مقابل `maxImpressions`
+- ترتيب حسب `priority`
+- عرض أعلى إعلان كـ Dialog/BottomSheet
+
+#### [NEW] `lib/notifications/widgets/promotional_popup_dialog.dart`
+
+Widget الإعلان المنبثق:
+- صورة الإعلان (full-width)
+- عنوان ووصف (إن وجدا)
+- زر CTA
+- زر إغلاق (إذا `isDismissible`)
+
+#### [MODIFY] [fcm_service.dart](file:///d:/project/bazarsuez/bazar_suez/temp_bazar/lib/services/fcm_service.dart)
+
+إضافة معالجة إشعارات الإعلانات:
+- التعرف على `type: 'announcement'` في بيانات FCM
+- عرض إشعار محلي مع عنوان الإعلان ونصه
+- عند النقر على الإشعار → فتح `message_detail_page` بالـ `announcementId`
+
+#### [MODIFY] [main.dart](file:///d:/project/bazarsuez/bazar_suez/temp_bazar/lib/main.dart)
+
+إضافة `InboxViewModel` إلى `MultiProvider` + استدعاء `PopupDisplayService` عند بدء التطبيق.
+
+#### [MODIFY] Router / Navigation
+
+إضافة مسارات لصفحات الإشعارات ورابط للوصول إلى مركز الرسائل.
+
+---
+
+### المرحلة 7: مركز الرسائل + الإعلانات المنبثقة في تطبيق المناديب (`bazaarsuezdriver`)
+
+---
+
+#### [NEW] `lib/features/notifications/` (نفس البنية)
+
+- `models/inbox_message_model.dart`
+- `services/inbox_service.dart` (بنمط Riverpod)
+- `services/popup_display_service.dart`
+- `pages/inbox_page.dart`
+- `pages/message_detail_page.dart`
+- `widgets/promotional_popup_dialog.dart`
+
+> [!NOTE]
+> الكود سيكون مشابه لـ `temp_bazar` مع تعديلات لمطابقة نمط **Riverpod** المُستخدم في تطبيق المناديب.
+
+#### [MODIFY] [notification_service.dart](file:///d:/project/bazaarsuezdriver/bazaarsuezdriver/lib/services/notification_service.dart)
+
+إضافة معالجة إشعارات الإعلانات (مشابه لـ `temp_bazar`).
+
+---
+
+### المرحلة 8: Security Rules
+
+---
+
+#### [MODIFY] Firestore Security Rules
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ═══════════════════════════════════════════════════
+    // الإعلانات — القراءة لأي مستخدم مسجل، الكتابة للأدمن فقط
+    // ═══════════════════════════════════════════════════
+    match /announcements/{announcementId} {
+      // القراءة: أي مستخدم مسجل (لعرض مركز الرسائل)
+      allow read: if request.auth != null;
+      // الكتابة: الأدمن فقط (إنشاء + تحديث stats.inAppReadCount)
+      allow create: if isAdmin();
+      // تحديث: الأدمن يحدث كل شيء، المستخدم العادي يحدث stats.inAppReadCount فقط
+      allow update: if isAdmin() || 
+        (request.auth != null && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats']));
+    }
+    
+    // ═══════════════════════════════════════════════════
+    // سجل الأخطاء — القراءة والكتابة للأدمن وCloud Functions فقط
+    // ═══════════════════════════════════════════════════
+    match /announcement_error_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // الكتابة عبر Cloud Functions فقط
+    }
+    
+    // ═══════════════════════════════════════════════════
+    // القوالب — الأدمن فقط
+    // ═══════════════════════════════════════════════════
+    match /announcement_templates/{templateId} {
+      allow read, write: if isAdmin();
+    }
+    
+    // ═══════════════════════════════════════════════════
+    // الإعلانات المنبثقة — القراءة لأي مستخدم، الكتابة للأدمن
+    // ═══════════════════════════════════════════════════
+    match /promotional_popups/{popupId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    // ═══════════════════════════════════════════════════
+    // سجل العمليات الإدارية — الأدمن فقط
+    // ═══════════════════════════════════════════════════
+    match /announcement_admin_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    function isAdmin() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'admin';
+    }
+  }
+}
+```
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Admin["تطبيق الأدمن (suez_admin)"]
+        A1["إنشاء إعلان جماعي"] --> A2["AnnouncementService"]
+        A1b["إرسال فردي من تفاصيل المستخدم"] --> A2
+        A3["إدارة القوالب"] --> TS["TemplateService"]
+        A4["إدارة الإعلانات المنبثقة"] --> PS["PopupService"]
+        A2 -->|"1. حفظ"| FS["Firestore: announcements/"]
+        A2 -->|"2. استدعاء"| CF["Cloud Functions"]
+        TS -->|"CRUD"| TMPL["Firestore: announcement_templates/"]
+        PS -->|"CRUD"| POP["Firestore: promotional_popups/"]
+    end
+
+    subgraph CloudFunctions["Cloud Functions"]
+        CF -->|"جمع tokens"| FS2["Firestore: users/courier_requests"]
+        CF -->|"إرسال"| FCM["Firebase Cloud Messaging"]
+        CF -->|"إحصائيات مجمعة"| STATS["announcements/{id}/stats"]
+        CF -->|"أخطاء فقط"| ERRS["announcement_error_logs/"]
+        SCHED["Scheduled Sender"] -->|"كل دقيقة"| CF
+    end
+
+    subgraph UserApps["تطبيقات المستخدمين"]
+        FCM -->|"Push"| U1["temp_bazar / bazaarsuezdriver"]
+        FS -->|"Query + Stream"| U2["مركز الرسائل"]
+        POP -->|"Query"| U3["الإعلانات المنبثقة"]
+        U1 --> U1a["عرض إشعار محلي"]
+        U2 --> U2a["قائمة الرسائل"]
+        U2a --> U2b["تفاصيل الرسالة"]
+        U2b -->|"increment ذري"| STATS
+        U3 --> U3a["Popup Dialog عند فتح التطبيق"]
+    end
+
+    style Admin fill:#e3f2fd,stroke:#1976d2
+    style CloudFunctions fill:#fff3e0,stroke:#f57c00
+    style UserApps fill:#e8f5e9,stroke:#388e3c
+```
+
+---
+
+## ملخص الملفات الكامل
+
+### تطبيق الأدمن (`suez_admin`)
+
+| الملف | النوع | الوصف |
+|------|------|------|
+| `lib/notifications/models/announcement_model.dart` | NEW | نموذج الإعلان |
+| `lib/notifications/models/announcement_template_model.dart` | NEW | نموذج القالب |
+| `lib/notifications/services/announcement_service.dart` | NEW | خدمة الإعلانات + CF |
+| `lib/notifications/services/template_service.dart` | NEW | خدمة القوالب |
+| `lib/notifications/viewmodels/announcement_viewmodel.dart` | NEW | ViewModel الإعلانات |
+| `lib/notifications/viewmodels/template_viewmodel.dart` | NEW | ViewModel القوالب |
+| `lib/notifications/pages/notifications_dashboard_page.dart` | NEW | لوحة تحكم |
+| `lib/notifications/pages/create_announcement_page.dart` | NEW | إنشاء إعلان |
+| `lib/notifications/pages/announcements_history_page.dart` | NEW | سجل الإعلانات |
+| `lib/notifications/pages/announcement_detail_page.dart` | NEW | تفاصيل + إحصائيات |
+| `lib/notifications/pages/templates_page.dart` | NEW | قائمة القوالب |
+| `lib/notifications/pages/create_edit_template_page.dart` | NEW | إنشاء/تعديل قالب |
+| `lib/notifications/widgets/*.dart` | NEW | 9 ويدجيتات مشتركة |
+| `lib/promotional_popups/models/promotional_popup_model.dart` | NEW | نموذج الإعلان المنبثق |
+| `lib/promotional_popups/services/promotional_popup_service.dart` | NEW | خدمة المنبثقات |
+| `lib/promotional_popups/viewmodels/promotional_popup_viewmodel.dart` | NEW | ViewModel |
+| `lib/promotional_popups/pages/popups_list_page.dart` | NEW | قائمة المنبثقات |
+| `lib/promotional_popups/pages/create_edit_popup_page.dart` | NEW | إنشاء/تعديل |
+| `lib/router/routes_config/admin_routes.dart` | MODIFY | مسارات جديدة |
+| `lib/dashboard/dashboard_page.dart` | MODIFY | قسم جديد في القائمة |
+| `lib/main.dart` | MODIFY | إضافة ViewModels |
+| `lib/stores/` (صفحة التفاصيل) | MODIFY | زر إرسال إشعار فردي |
+| `lib/offices/office_detail_page.dart` | MODIFY | زر إرسال إشعار فردي |
+| `lib/courier_requests/courier_request_detail_page.dart` | MODIFY | زر إرسال إشعار فردي |
+| `lib/reports/pages/report_detail_page.dart` | MODIFY | زر إرسال إشعار فردي |
+
+### تطبيق المستخدمين (`temp_bazar`)
+
+| الملف | النوع | الوصف |
+|------|------|------|
+| `lib/notifications/models/inbox_message_model.dart` | NEW | نموذج رسالة |
+| `lib/notifications/services/inbox_service.dart` | NEW | خدمة الصندوق (مركزي) |
+| `lib/notifications/services/popup_display_service.dart` | NEW | عرض المنبثقات |
+| `lib/notifications/viewmodels/inbox_viewmodel.dart` | NEW | ViewModel |
+| `lib/notifications/pages/inbox_page.dart` | NEW | مركز الرسائل |
+| `lib/notifications/pages/message_detail_page.dart` | NEW | تفاصيل رسالة |
+| `lib/notifications/widgets/inbox_badge.dart` | NEW | Badge الإشعارات |
+| `lib/notifications/widgets/promotional_popup_dialog.dart` | NEW | حوار المنبثق |
+| `lib/services/fcm_service.dart` | MODIFY | معالجة إشعارات الإعلانات |
+| `lib/main.dart` | MODIFY | إضافة ViewModels + Popup |
+
+### تطبيق المناديب (`bazaarsuezdriver`)
+
+| الملف | النوع | الوصف |
+|------|------|------|
+| `lib/features/notifications/` (كامل) | NEW | مركز رسائل + منبثقات (Riverpod) |
+| `lib/services/notification_service.dart` | MODIFY | معالجة إشعارات الإعلانات |
+
+### Cloud Functions
+
+| الملف | النوع | الوصف |
+|------|------|------|
+| `functions/src/notifications/sendAnnouncement.ts` | NEW | إرسال جماعي + فردي |
+| `functions/src/notifications/scheduledSender.ts` | NEW | جدولة |
+
+### Firestore
+
+| العنصر | النوع | الوصف |
+|--------|------|------|
+| Security Rules | MODIFY | قواعد الأمان للـ 6 collections |
+
+---
+
+## ترتيب التنفيذ المقترح
+
+1. **المرحلة 1**: هيكل قاعدة البيانات (تصميم — تطبيق Security Rules)
+2. **المرحلة 2**: Cloud Functions (`sendAnnouncement` + `scheduledSender` + `sendDirectNotification`)
+3. **المرحلة 3**: تطبيق الأدمن — الإعلانات (Models → Services → ViewModels → Pages)
+4. **المرحلة 4**: تطبيق الأدمن — القوالب + الإعلانات المنبثقة + الإرسال الفردي
+5. **المرحلة 5**: مركز رسائل + منبثقات `temp_bazar`
+6. **المرحلة 6**: مركز رسائل + منبثقات `bazaarsuezdriver`
+7. **المرحلة 7**: Security Rules + اختبار شامل
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- `flutter analyze` لكل تطبيق للتأكد من عدم وجود أخطاء
+- `flutter build apk --debug` للتأكد من البناء
+
+### Manual Verification
+1. إنشاء إعلان جماعي اختباري من تطبيق الأدمن → التحقق من الإحصائيات المجمعة
+2. التحقق من وصول الإشعار على الأجهزة المستهدفة
+3. التحقق من ظهور الرسالة في مركز الرسائل (استعلام مركزي)
+4. التحقق من تحديث `inAppReadCount` عند القراءة
+5. اختبار الجدولة (إرسال مؤجل)
+6. إنشاء قالب → استخدامه في إعلان جديد → التحقق من الملء التلقائي
+7. إنشاء إعلان منبثق → التحقق من ظهوره عند فتح التطبيق
+8. إرسال إشعار فردي من صفحة تفاصيل المتجر/المندوب
+9. اختبار منع التكرار (idempotency)
+10. التحقق من عدم وجود Firestore documents فردية لكل مستخدم (كفاءة التكلفة)

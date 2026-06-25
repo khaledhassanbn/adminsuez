@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/user_report.dart';
 import '../services/report_service.dart';
 import '../../account/services/admin_account_service.dart';
+import '../../notifications/widgets/send_direct_notification_dialog.dart';
 
 class AppColors {
   static const Color mainColor = Color(0xFF4E99B4);
@@ -95,6 +96,28 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
     }
   }
 
+  String _targetUserTypeForNotification() {
+    switch (widget.report.targetType) {
+      case 'craftsman':
+        return 'craftsman';
+      case 'store':
+        return 'merchant';
+      case 'courier':
+        return 'driver';
+      default:
+        return 'customer';
+    }
+  }
+
+  void _sendNotificationToTarget() {
+    SendDirectNotificationDialog.show(
+      context,
+      targetUserId: widget.report.targetId,
+      targetUserName: _targetName ?? widget.report.targetId,
+      targetUserType: _targetUserTypeForNotification(),
+    );
+  }
+
   Future<void> _launchPersonalPage() async {
     final targetId = widget.report.targetId;
     final type = widget.report.targetType;
@@ -175,8 +198,9 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.more_vert),
-          onPressed: () {},
+          icon: const Icon(Icons.notifications_active_outlined),
+          tooltip: 'إرسال إشعار',
+          onPressed: _sendNotificationToTarget,
         ),
       ],
     );
