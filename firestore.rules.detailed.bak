@@ -1,0 +1,661 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================================
+    // HELPER FUNCTIONS
+    // ============================================================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user is admin.
+    // The apps mark admins via the Firestore users/{uid}.status field
+    // (see AuthGuard.loadUserStatus). Custom token claims are kept as an
+    // optional fallback in case they are ever provisioned server-side.
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.userStatus == 'admin' ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', '') == 'admin'
+        )
+      );
+    }
+
+    function hasAdminRoleDoc(uid) {
+      return exists(/databases/$(database)/documents/admin_roles/$(uid));
+    }
+
+    function adminRoleDoc(uid) {
+      return get(/databases/$(database)/documents/admin_roles/$(uid));
+    }
+
+    function getAdminRole() {
+      return adminRoleDoc(request.auth.uid).data.role;
+    }
+
+    function hasPermission(permission) {
+      return isAdmin() && (
+        !hasAdminRoleDoc(request.auth.uid) ||
+        getAdminRole() == 'super_admin' ||
+        adminRoleDoc(request.auth.uid).data.permissions[permission] == true
+      );
+    }
+
+    function isSuperAdmin() {
+      return isAdmin() && (
+        !hasAdminRoleDoc(request.auth.uid) ||
+        getAdminRole() == 'super_admin'
+      );
+    }
+
+    function isModeratorOrAbove() {
+      return isAdmin() && (
+        !hasAdminRoleDoc(request.auth.uid) ||
+        getAdminRole() in ['super_admin', 'admin', 'moderator']
+      );
+    }
+
+    function isNotDeletedUser(uid) {
+      return !exists(/databases/$(database)/documents/users/$(uid)) ||
+        get(/databases/$(database)/documents/users/$(uid)).data.isDeleted != true;
+    }
+    
+    // Check if store subscription is active
+    function isStoreActive(storeId) {
+      let store = get(/databases/$(database)/documents/markets/$(storeId));
+      let now = request.time;
+      let licenseEndAt = store.data.licenseEndAt;
+      return store.data.isActive == true && 
+             licenseEndAt != null && 
+             licenseEndAt > now;
+    }
+    
+    // Check if store can add products
+    function canStoreAddProducts(storeId) {
+      let store = get(/databases/$(database)/documents/markets/$(storeId));
+      return store.data.canAddProducts == true && isStoreActive(storeId);
+    }
+    
+    // Check if store can receive orders
+    // NOTE: guards against missing owner so a malformed store doc does not
+    // turn into an evaluation error (which surfaces as permission-denied).
+    function canStoreReceiveOrders(storeId) {
+      let store = get(/databases/$(database)/documents/markets/$(storeId));
+      let ownerId = store.data.get('ownerId', store.data.get('ownerUid', ''));
+      let balance = (ownerId != '' &&
+                     exists(/databases/$(database)/documents/users/$(ownerId)))
+        ? get(/databases/$(database)/documents/users/$(ownerId)).data.get('walletBalance', 0)
+        : 0;
+      let creditLimit = store.data.get('creditLimit', -50);
+      return store.data.canReceiveOrders == true && 
+             isStoreActive(storeId) &&
+             balance > creditLimit;
+    }
+    
+    // Check if user owns the store (supports both ownerId and legacy ownerUid)
+    function isStoreOwner(storeId) {
+      let store = get(/databases/$(database)/documents/markets/$(storeId));
+      let ownerId = store.data.get('ownerId', store.data.get('ownerUid', ''));
+      return isAuthenticated() && ownerId != '' && ownerId == request.auth.uid;
+    }
+
+    // Users linked to a store via users/{uid}.market_id (co-owners / managers).
+    function isLinkedStoreUser(storeId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('market_id', '') == storeId ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('marketId', '') == storeId
+        );
+    }
+
+    function canManageStore(storeId) {
+      return isStoreOwner(storeId) || isLinkedStoreUser(storeId) || isAdmin();
+    }
+
+    // يستخرج قيمة فلتر storeId من استعلامات الطلبات (ترتيب الفلاتر قد يختلف)
+    function ordersQueryStoreId() {
+      return request.query.filters.size() >= 1 &&
+        request.query.filters[0].fieldPath == 'storeId' &&
+        request.query.filters[0].op == '=='
+        ? request.query.filters[0].value
+        : (request.query.filters.size() > 1 &&
+           request.query.filters[1].fieldPath == 'storeId' &&
+           request.query.filters[1].op == '=='
+           ? request.query.filters[1].value
+           : '');
+    }
+    
+    // ============================================================================
+    // MARKETS (STORES) COLLECTION
+    // ============================================================================
+    
+    match /markets/{storeId} {
+      // Allow read if store is visible (active subscription)
+      allow read: if resource.data.isVisible == true || 
+                     isStoreOwner(storeId) || 
+                     isAdmin();
+      
+      // Allow create: authenticated users only (supports ownerId or legacy ownerUid)
+      allow create: if isAuthenticated() && 
+                       request.resource.data.get('ownerId',
+                         request.resource.data.get('ownerUid', '')) == request.auth.uid;
+      
+      // Allow update: owner or admin only
+      // BUT: Block updates to products/orders fields if subscription expired
+      allow update: if (isStoreOwner(storeId) || isAdmin()) && (
+        // Allow updates to subscription-related fields (for renewal)
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isActive', 'licenseStartAt', 'licenseEndAt', 'licenseDurationDays', 
+                   'licenseAutoRenew', 'canAddProducts', 'currentPackageId', 'currentPackageName',
+                   'canReceiveOrders', 'deactivatedAt', 'status', 'isVisible',
+                   'commissionRate', 'commissionType', 'creditLimit',
+                   'totalCommissionsPaid', 'lastCommissionAt', 'updatedAt']) ||
+        // Allow other updates only if subscription is active
+        isStoreActive(storeId)
+      );
+      
+      // Allow delete: admin only
+      allow delete: if isAdmin();
+      
+      // ============================================================================
+      // PRODUCTS SUBCOLLECTION
+      // ============================================================================
+      
+      match /products/{productId} {
+        // Allow read: if store is visible
+        allow read: if resource.data.parentStoreId == storeId && 
+                       (get(/databases/$(database)/documents/markets/$(storeId)).data.isVisible == true ||
+                        isStoreOwner(storeId) ||
+                        isAdmin());
+        
+        // Allow create: only if store can add products (active subscription)
+        allow create: if isAuthenticated() && 
+                          isStoreOwner(storeId) && 
+                          canStoreAddProducts(storeId) &&
+                          request.resource.data.parentStoreId == storeId;
+        
+        // Allow update: only if store can add products (active subscription)
+        allow update: if isAuthenticated() && 
+                          isStoreOwner(storeId) && 
+                          canStoreAddProducts(storeId);
+        
+        // Allow delete: owner or admin
+        allow delete: if isStoreOwner(storeId) || isAdmin();
+      }
+      
+      // ============================================================================
+      // ORDERS SUBCOLLECTION
+      // ============================================================================
+      
+      match /orders/{orderId} {
+        // Allow read: store owner, admin, or order creator
+        allow read: if isAuthenticated() && (
+          isStoreOwner(storeId) || 
+          isAdmin() || 
+          resource.data.userId == request.auth.uid
+        );
+        
+        // Allow create: authenticated users (customers can place orders)
+        // BUT: Only if store can receive orders (active subscription)
+        allow create: if isAuthenticated() && 
+                          request.resource.data.storeId == storeId &&
+                          canStoreReceiveOrders(storeId);
+        
+        // Allow update: store owner (to update order status) or admin
+        // BUT: Only if store can receive orders (active subscription)
+        allow update: if isAuthenticated() && (
+          (isStoreOwner(storeId) && canStoreReceiveOrders(storeId)) || 
+          isAdmin()
+        );
+        
+        // Allow delete: admin only
+        allow delete: if isAdmin();
+      }
+      
+      // ============================================================================
+      // PAYMENTS SUBCOLLECTION
+      // ============================================================================
+      
+      match /payments/{paymentId} {
+        // Allow read: store owner or admin
+        allow read: if isAuthenticated() && (
+          isStoreOwner(storeId) || 
+          isAdmin()
+        );
+        
+        // Allow create: Cloud Functions only (via server timestamp)
+        // In practice, this is created by Paymob webhook
+        allow create: if false; // Only Cloud Functions can create
+        
+        // No updates or deletes allowed
+        allow update, delete: if false;
+      }
+
+      // ============================================================================
+      // STATISTICS SUBCOLLECTION (مبيعات المتجر)
+      // ============================================================================
+
+      match /statistics/{statId} {
+        allow read, write: if canManageStore(storeId) || isAdmin();
+      }
+    }
+    
+    // ============================================================================
+    // PACKAGES COLLECTION
+    // ============================================================================
+    
+    match /packages/{packageId} {
+      // Allow read: everyone (for pricing page)
+      allow read: if true;
+      
+      // Allow create: admin only
+      allow create: if isAdmin();
+      
+      // Allow update: admin only
+      allow update: if isAdmin();
+      
+      // Allow delete: admin only
+      allow delete: if isAdmin();
+    }
+    
+    // ============================================================================
+    // PLANS COLLECTION (Legacy - for backward compatibility)
+    // ============================================================================
+    
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // ============================================================================
+    // UNIFIED ORDERS COLLECTION (top-level /orders)
+    // ============================================================================
+
+    match /orders/{orderId} {
+      function orderStoreId() {
+        return resource.data.storeId;
+      }
+
+      function isOrderCustomer() {
+        return isAuthenticated() && resource.data.userId == request.auth.uid;
+      }
+
+      function hasOrderAccess() {
+        return isAuthenticated() &&
+          resource.data.get('access', {}).get(request.auth.uid, false) == true;
+      }
+
+      allow read: if isAdmin() ||
+        isOrderCustomer() ||
+        hasOrderAccess() ||
+        (resource.data.keys().hasAny(['storeId']) &&
+          canManageStore(orderStoreId()));
+
+      // استعلامات قائمة الطلبات لصاحب المتجر (storeId + isActive)
+      allow list: if isAdmin();
+
+      allow list: if isAuthenticated() &&
+        ordersQueryStoreId() != '' &&
+        canManageStore(ordersQueryStoreId());
+
+      allow list: if isAuthenticated() &&
+        request.query.filters.size() >= 1 &&
+        request.query.filters[0].fieldPath == 'userId' &&
+        request.query.filters[0].op == '==' &&
+        request.query.filters[0].value == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        canStoreReceiveOrders(request.resource.data.storeId);
+
+      allow update: if isAdmin() ||
+        (isAuthenticated() && (
+          canManageStore(resource.data.storeId) ||
+          isOrderCustomer() ||
+          hasOrderAccess()
+        ));
+
+      allow delete: if isAdmin();
+
+      match /events/{eventId} {
+        allow read: if isAdmin() ||
+          (isAuthenticated() && (
+            get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid ||
+            isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.storeId)
+          ));
+        allow write: if isAuthenticated();
+      }
+    }
+
+    // ============================================================================
+    // USERS COLLECTION
+    // ============================================================================
+
+    match /users/{userId} {
+      allow get: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isAdmin() ||
+        resource.data.get('role', '') == 'office'
+      );
+
+      // قائمة مكاتب التوصيل النشطة لاختيار المندوب/المكتب
+      allow list: if isAdmin() ||
+        (isAuthenticated() &&
+          request.query.filters.size() == 1 &&
+          request.query.filters[0].fieldPath == 'role' &&
+          request.query.filters[0].op == '==' &&
+          request.query.filters[0].value == 'office');
+
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId && isNotDeletedUser(userId)) ||
+        isAdmin()
+      );
+      allow delete: if isSuperAdmin();
+
+      match /saved_locations/{locationId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    // ============================================================================
+    // ADMIN ROLES
+    // ============================================================================
+
+    match /admin_roles/{adminUid} {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // ============================================================================
+    // ADMIN ACTIVITY LOGS
+    // ============================================================================
+
+    match /admin_activity_logs/{logId} {
+      allow read: if hasPermission('view_logs');
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ============================================================================
+    // REPORTS
+    // ============================================================================
+
+    match /reports/{reportId} {
+      allow read: if isModeratorOrAbove();
+      allow create: if isAuthenticated() &&
+        request.resource.data.reporterUid == request.auth.uid;
+      allow update: if hasPermission('manage_reports');
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================================================
+    // CRAFTSMEN
+    // ============================================================================
+
+    match /craftsmen/{craftsmanId} {
+      allow read: if resource.data.visibility == 'public' ||
+        (isAuthenticated() && request.auth.uid == craftsmanId) ||
+        hasPermission('manage_craftsmen');
+      allow create: if isAuthenticated() && request.auth.uid == craftsmanId;
+      allow update: if (isAuthenticated() && request.auth.uid == craftsmanId) ||
+        hasPermission('manage_craftsmen') ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats', 'lastActiveAt']);
+      allow delete: if hasPermission('delete_accounts');
+
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+
+      match /contact_events/{eventId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+      }
+    }
+
+    // ============================================================================
+    // COURIER REQUESTS
+    // ============================================================================
+
+    match /courier_requests/{requestId} {
+      // صاحب الطلب يقرأ مستنده دائماً (pending / rejected / approved)
+      allow get: if isAuthenticated() && request.auth.uid == requestId;
+
+      allow get: if isAdmin();
+
+      allow get: if isAuthenticated() && resource.data.status == 'approved';
+
+      // استعلام التحقق من رقم الهاتف — يحتاج قراءة محدودة
+      allow list: if isAdmin() ||
+        (isAuthenticated() &&
+          request.query.limit <= 1 &&
+          request.query.filters.size() == 1 &&
+          request.query.filters[0].fieldPath == 'phone' &&
+          request.query.filters[0].op == '==');
+
+      // دليل المناديب المعتمدين لاختيار مندوب مستقل (صفحة طلبات المتجر)
+      allow list: if isAuthenticated() &&
+        request.query.filters.size() == 1 &&
+        request.query.filters[0].fieldPath == 'status' &&
+        request.query.filters[0].op == '==' &&
+        request.query.filters[0].value == 'approved';
+
+      // إنشاء طلب تسجيل جديد
+      allow create: if isAuthenticated() &&
+        request.auth.uid == requestId &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending';
+
+      // تحديث: أدمن، أو إعادة إرسال بعد الرفض، أو تحديث الـ fcmToken بمعرفة صاحب الطلب
+      allow update: if isAdmin() ||
+        hasPermission('manage_couriers') ||
+        (isAuthenticated() &&
+          request.auth.uid == requestId &&
+          resource.data.status == 'rejected' &&
+          request.resource.data.status == 'pending') ||
+        (isAuthenticated() &&
+          request.auth.uid == requestId &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['fcmToken', 'fcmTokenUpdatedAt']));
+
+      allow delete: if hasPermission('delete_accounts');
+    }
+
+    // فهرس أرقام الهواتف — للتحقق من التكرار بأمان
+    match /courier_phones/{phone} {
+      allow get: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.uid == request.auth.uid &&
+        !exists(/databases/$(database)/documents/courier_phones/$(phone));
+      allow update, delete: if isAdmin();
+    }
+
+    // ============================================================================
+    // COURIER RATINGS
+    // ============================================================================
+
+    match /courier_ratings/{ratingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if hasPermission('manage_couriers');
+    }
+
+    // ============================================================================
+    // SUPPORT CONVERSATIONS
+    // ============================================================================
+
+    match /support_conversations/{conversationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      
+      allow create: if isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid;
+      
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      
+      allow delete: if isSuperAdmin();
+      
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/support_conversations/$(conversationId)).data.userId == request.auth.uid ||
+          isAdmin()
+        );
+        
+        allow create: if isAuthenticated() && (
+          get(/databases/$(database)/documents/support_conversations/$(conversationId)).data.userId == request.auth.uid ||
+          isAdmin()
+        );
+        
+        allow update, delete: if false;
+      }
+    }
+
+    // ============================================================================
+    // WALLET LEDGER & COMMISSION RULES
+    // ============================================================================
+
+    match /wallet_ledger/{entryId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // commission_config
+    match /commission_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /wallet_transactions/{txId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ============================================================================
+    // NOTIFICATIONS & POPUPS COLLECTIONS
+    // ============================================================================
+    
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || 
+        (isAuthenticated() && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats']));
+    }
+    
+    match /announcement_error_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    
+    match /announcement_templates/{templateId} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /promotional_popups/{popupId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    match /announcement_admin_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ============================================================================
+    // CATEGORIES, APP SETTINGS, REPORTS, ADS & FCM STORES
+    // ============================================================================
+
+    match /Categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+
+      match /subCategories/{subCategoryId} {
+        allow read: if true;
+        allow write: if isAdmin();
+
+        match /stores/{storeLink} {
+          allow read: if true;
+          allow write: if isAdmin();
+        }
+      }
+
+      match /stores/{storeLink} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+    }
+
+    match /app_settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /user_reports/{reportId} {
+      allow read: if isModeratorOrAbove();
+      allow create: if isAuthenticated();
+      allow update: if hasPermission('manage_reports');
+      allow delete: if isSuperAdmin();
+    }
+
+    match /ad_requests/{requestId} {
+      allow read: if isAdmin() ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    match /stores/{storeId} {
+      allow read: if canManageStore(storeId);
+      allow write: if canManageStore(storeId);
+    }
+
+    match /wallet/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /order_notifications/{notificationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /{path=**}/items/{itemId} {
+      allow read: if resource.data.get('marketId', '') != '' &&
+        (get(/databases/$(database)/documents/markets/$(resource.data.marketId)).data.isVisible == true ||
+         canManageStore(resource.data.marketId));
+      allow create, update: if isAuthenticated() &&
+        request.resource.data.get('marketId', '') != '' &&
+        canManageStore(request.resource.data.marketId) &&
+        canStoreAddProducts(request.resource.data.marketId);
+      allow delete: if isAuthenticated() &&
+        resource.data.get('marketId', '') != '' &&
+        canManageStore(resource.data.marketId);
+    }
+
+    // ============================================================================
+    // DEFAULT DENY
+    // ============================================================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

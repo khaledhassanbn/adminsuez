@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class CourierRequestsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -13,10 +14,13 @@ class CourierRequestsService {
   }
 
   /// قبول طلب المندوب
-  /// يغير الحالة إلى approved
+  /// يغير الحالة إلى approved مع حفظ بيانات الموافقة
   Future<void> approveRequest(String requestId) async {
+    final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     await _firestore.collection('courier_requests').doc(requestId).update({
       'status': 'approved',
+      'approvedAt': FieldValue.serverTimestamp(),
+      'approvedBy': adminUid,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

@@ -142,10 +142,15 @@ class _CourierRequestDetailPageState extends State<CourierRequestDetailPage> {
             data['driving_license_photo'] ?? 
             '';
 
+        final email = data['email'] ?? '';
+
         final rejectionReason = data['rejectionReason'] ?? 
             data['rejection_reason'] ?? 
             '';
         final createdAt = data['createdAt'] as Timestamp?;
+        final submittedAt = data['submittedAt'] as Timestamp?;
+        final approvedAt = data['approvedAt'] as Timestamp?;
+        final approvedBy = data['approvedBy'] as String? ?? '';
 
         return Stack(
           children: [
@@ -171,13 +176,33 @@ class _CourierRequestDetailPageState extends State<CourierRequestDetailPage> {
                           const SizedBox(height: 10),
                           _buildDetailsCard([
                             _buildDetailItem('الاسم الكامل', name, Icons.badge_outlined),
+                            if (email.isNotEmpty)
+                              _buildDetailItem('البريد الإلكتروني', email, Icons.email_outlined),
                             _buildDetailItem('رقم الهاتف', phone, Icons.phone_android_outlined, isPhone: true),
                             _buildDetailItem('نوع المركبة', vehicle, Icons.directions_bike_rounded),
                             if (createdAt != null)
                               _buildDetailItem(
-                                'تاريخ التقديم',
+                                'تاريخ الإنشاء',
                                 _formatTimestamp(createdAt),
                                 Icons.calendar_month_outlined,
+                              ),
+                            if (submittedAt != null)
+                              _buildDetailItem(
+                                'تاريخ تقديم الطلب',
+                                _formatTimestamp(submittedAt),
+                                Icons.send_outlined,
+                              ),
+                            if (approvedAt != null)
+                              _buildDetailItem(
+                                'تاريخ الموافقة',
+                                _formatTimestamp(approvedAt),
+                                Icons.verified_outlined,
+                              ),
+                            if (approvedBy.isNotEmpty)
+                              _buildDetailItem(
+                                'تمت الموافقة بواسطة',
+                                approvedBy,
+                                Icons.admin_panel_settings_outlined,
                               ),
                           ]),
                           const SizedBox(height: 24),
