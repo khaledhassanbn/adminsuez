@@ -5,6 +5,7 @@ import '../../authentication/guards/AuthGuard.dart';
 import '../../theme/app_color.dart';
 import '../viewmodels/admin_ad_requests_viewmodel.dart';
 import '../widgets/request_card.dart';
+import '../widgets/rejection_bottom_sheet.dart';
 import '../widgets/loading_snackbar.dart';
 
 class AdminAdRequestsPage extends StatelessWidget {
@@ -47,6 +48,34 @@ class _AdminAdRequestsView extends StatelessWidget {
           ),
           backgroundColor: AppColors.mainColor,
           elevation: 0,
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(48),
+            child: Consumer<AdminAdRequestsViewModel>(
+              builder: (context, vm, _) => SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    _ReqFilterChip(
+                      label: 'معلقة',
+                      selected: vm.filter == RequestFilter.pending,
+                      onTap: () => vm.setFilter(RequestFilter.pending),
+                    ),
+                    _ReqFilterChip(
+                      label: 'موافق عليها',
+                      selected: vm.filter == RequestFilter.approved,
+                      onTap: () => vm.setFilter(RequestFilter.approved),
+                    ),
+                    _ReqFilterChip(
+                      label: 'مرفوضة',
+                      selected: vm.filter == RequestFilter.rejected,
+                      onTap: () => vm.setFilter(RequestFilter.rejected),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
         body: Consumer<AdminAdRequestsViewModel>(
           builder: (context, viewModel, _) {
@@ -106,7 +135,7 @@ class _AdminAdRequestsView extends StatelessWidget {
     final viewModel = context.read<AdminAdRequestsViewModel>();
 
     LoadingSnackBar.show(context, 'جاري إنشاء الإعلان...');
-    final success = await viewModel.updateRequestStatus(requestId, 'approved');
+    final success = await viewModel.approveRequest(requestId);
     LoadingSnackBar.hide(context);
 
     if (success) {
@@ -128,17 +157,22 @@ class _AdminAdRequestsView extends StatelessWidget {
 
   Future<void> _handleReject(BuildContext context, String requestId) async {
     final viewModel = context.read<AdminAdRequestsViewModel>();
+    final reason = await RejectionBottomSheet.show(context);
+    if (reason == null || !context.mounted) return;
 
-    LoadingSnackBar.show(context, 'جاري تحديث حالة الطلب...');
-    final success = await viewModel.updateRequestStatus(requestId, 'rejected');
+    LoadingSnackBar.show(context, 'جاري رفض الطلب واسترداد المبلغ...');
+    final success = await viewModel.rejectWithReason(requestId, reason);
     LoadingSnackBar.hide(context);
 
     if (success) {
-      LoadingSnackBar.showSuccess(context, 'تم تحديث حالة الطلب بنجاح');
+      LoadingSnackBar.showSuccess(
+        context,
+        'تم رفض الطلب واسترداد المبلغ للمستخدم',
+      );
     } else {
       LoadingSnackBar.showError(
         context,
-        viewModel.errorMessage ?? 'فشل تحديث حالة الطلب',
+        viewModel.errorMessage ?? 'فشل رفض الطلب',
       );
     }
   }
@@ -177,6 +211,44 @@ class _AdminAdRequestsView extends StatelessWidget {
         );
       }
     }
+  }
+}
+
+class _ReqFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ReqFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Material(
+        color: selected ? Colors.white : Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppColors.mainColor : Colors.white,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

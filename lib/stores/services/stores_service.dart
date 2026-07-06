@@ -217,4 +217,36 @@ class StoresService {
       return {'success': false, 'message': 'خطأ: ${e.toString()}'};
     }
   }
+
+  /// تحديث تفعيل طلب المناديب لمتجر محدد
+  /// [enabled] = null → موروث من الإعداد العام
+  Future<Map<String, dynamic>> updateIndependentCourierEnabled(
+    String storeId,
+    bool? enabled,
+  ) async {
+    try {
+      final storeDoc =
+          await _firestore.collection('markets').doc(storeId).get();
+      if (!storeDoc.exists) {
+        return {'success': false, 'message': 'المتجر غير موجود'};
+      }
+
+      if (enabled == null) {
+        await _firestore.collection('markets').doc(storeId).update({
+          'independentCourierEnabled': FieldValue.delete(),
+        });
+      } else {
+        await _firestore.collection('markets').doc(storeId).update({
+          'independentCourierEnabled': enabled,
+        });
+      }
+
+      return {
+        'success': true,
+        'message': 'تم تحديث إعداد طلب المناديب للمتجر',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'خطأ: ${e.toString()}'};
+    }
+  }
 }

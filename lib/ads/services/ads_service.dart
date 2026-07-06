@@ -26,8 +26,8 @@ class AdsService {
 
       final ads = adsData
           .map((ad) {
-            if (ad is Map<String, dynamic>) {
-              return AdModel.fromMap(ad);
+            if (ad is Map) {
+              return AdModel.fromMap(Map<String, dynamic>.from(ad));
             }
             return null;
           })
@@ -193,8 +193,120 @@ class AdsService {
     }
   }
 
+  Future<bool> pauseAd(int slotId) async {
+    try {
+      final allAds = await fetchAds();
+      final adIndex = allAds.indexWhere((ad) => ad.slotId == slotId);
+      if (adIndex == -1) return false;
+      return updateAd(allAds[adIndex].copyWith(isPaused: true));
+    } catch (e) {
+      print('خطأ في إيقاف الإعلان: $e');
+      return false;
+    }
+  }
+
+  Future<bool> resumeAd(int slotId) async {
+    try {
+      final allAds = await fetchAds();
+      final adIndex = allAds.indexWhere((ad) => ad.slotId == slotId);
+      if (adIndex == -1) return false;
+      final ad = allAds[adIndex];
+      return updateAd(
+        ad.copyWith(
+          isPaused: false,
+          isActive: true,
+          startTime: ad.startTime ?? DateTime.now(),
+        ),
+      );
+    } catch (e) {
+      print('خطأ في استئناف الإعلان: $e');
+      return false;
+    }
+  }
+
+  Future<bool> createAdminAd({
+    required String imageUrl,
+    required int durationHours,
+    required String targetType,
+    String? targetId,
+    String? targetName,
+  }) async {
+    final newAd = AdModel(
+      slotId: 0,
+      imageUrl: imageUrl,
+      targetStoreId: targetId,
+      targetType: targetType,
+      durationHours: durationHours,
+      isActive: true,
+      isPaused: false,
+      startTime: DateTime.now(),
+      createdBy: AdCreatedBy.admin,
+      ownerName: targetName,
+      price: 0,
+    );
+    return addAd(newAd);
+  }
+
+  Future<Map<String, dynamic>> getAdsStats() async {
+    final allAds = await fetchAds();
+    final requestsSnap = await _firestore.collection('ad_requests').get();
+    final requests = requestsSnap.docs;
+
+    double revenue = 0;
+    int active = 0;
+    int scheduled = 0;
+    int paused = 0;
+    int expired = 0;
+
+    for (final ad in allAds) {
+      if (ad.isValid) {
+        active++;
+      } else if (ad.isScheduled) {
+        scheduled++;
+      } else if (ad.isPaused && !ad.isExpired) {
+        paused++;
+      } else if (ad.isExpired) {
+        expired++;
+      }
+      if (ad.price > 0) revenue += ad.price;
+    }
+
+    return {
+      'active': active,
+      'scheduled': scheduled,
+      'paused': paused,
+      'expired': expired,
+      'pendingRequests': requests.where((d) => d.data()['status'] == 'pending').length,
+      'rejectedRequests': requests.where((d) => d.data()['status'] == 'rejected').length,
+      'revenue': revenue,
+      'totalAds': allAds.length,
+    };
+  }
+
+  Future<List<Map<String, String>>> fetchCraftsmen() async {
+    try {
+      final snapshot = await _firestore.collection('craftsmen').get();
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'name': (data['name'] ?? data['displayName'] ?? 'حرفي').toString(),
+        };
+      }).toList();
+    } catch (e) {
+      print('خطأ في جلب الحرفيين: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, String>>> fetchAllTargets() async {
+    final stores = await fetchStores();
+    final craftsmen = await fetchCraftsmen();
+    return [...stores, ...craftsmen];
+  }
+
   // تبديل حالة الإعلان (تشغيل/إيقاف)
-  Future<bool> toggleAdStatus(int slotId, bool isActive) async {
+  Future<bool> toggleAdStatus(int slotId, bool newIsActive) async {
     try {
       final allAds = await fetchAds();
       final adIndex = allAds.indexWhere((ad) => ad.slotId == slotId);
@@ -203,14 +315,18 @@ class AdsService {
 
       final ad = allAds[adIndex];
       DateTime? newStartTime = ad.startTime;
+      var newIsPaused = ad.isPaused;
 
-      // إذا كان يتم تفعيل الإعلان ولم يكن له startTime، قم بتعيينه الآن
-      if (isActive && ad.startTime == null) {
-        newStartTime = DateTime.now();
+      if (newIsActive) {
+        newIsPaused = false;
+        if (newStartTime == null || ad.isExpired) {
+          newStartTime = DateTime.now();
+        }
       }
 
       final updatedAd = ad.copyWith(
-        isActive: isActive,
+        isActive: newIsActive,
+        isPaused: newIsPaused,
         startTime: newStartTime,
       );
 

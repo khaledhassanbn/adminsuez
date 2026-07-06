@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/ad_request_model.dart';
+import 'ad_network_image.dart';
 
 class RequestCard extends StatelessWidget {
   final AdRequestModel request;
@@ -41,12 +42,19 @@ class RequestCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (request.storeName != null)
-                        Text(
-                          request.storeName!,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                request.storeName!,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            _OwnerTypeBadge(request: request),
+                          ],
                         ),
                       const SizedBox(height: 4),
                       Text(
@@ -81,25 +89,11 @@ class RequestCard extends StatelessWidget {
 
             // صورة الإعلان
             if (request.imageUrl != null)
-              ClipRRect(
+              AdNetworkImage(
+                imageUrl: request.imageUrl,
+                height: 200,
+                width: double.infinity,
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  request.imageUrl!,
-                  width: double.infinity,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      height: 200,
-                      color: Colors.grey[300],
-                      child: const Icon(
-                        Icons.broken_image,
-                        size: 50,
-                        color: Colors.grey,
-                      ),
-                    );
-                  },
-                ),
               ),
 
             const SizedBox(height: 16),
@@ -115,6 +109,18 @@ class RequestCard extends StatelessWidget {
             InfoRow(label: 'رقم الهاتف', value: request.phoneNumber),
             const SizedBox(height: 8),
             InfoRow(label: 'تاريخ الطلب', value: formatDate(request.createdAt)),
+
+            if (request.rejectionReason != null) ...[
+              const SizedBox(height: 8),
+              InfoRow(label: 'سبب الرفض', value: request.rejectionReason!),
+            ],
+            if (request.status == 'rejected') ...[
+              const SizedBox(height: 8),
+              InfoRow(
+                label: 'حالة الاسترجاع',
+                value: request.refunded ? 'تم الاسترداد ✅' : 'لم يُسترد',
+              ),
+            ],
 
             if (request.adminNotes != null) ...[
               const SizedBox(height: 8),
@@ -169,6 +175,32 @@ class RequestCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OwnerTypeBadge extends StatelessWidget {
+  final AdRequestModel request;
+
+  const _OwnerTypeBadge({required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    final isCraftsman = request.isCraftsmanRequest;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: (isCraftsman ? Colors.purple : Colors.blue).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        isCraftsman ? 'حرفي' : 'تاجر',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: isCraftsman ? Colors.purple : Colors.blue,
         ),
       ),
     );

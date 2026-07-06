@@ -1,23 +1,30 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_color.dart';
 import '../models/ad_model.dart';
+import 'ad_network_image.dart';
 
 class AdSlotCard extends StatefulWidget {
   final AdModel ad;
   final List<Map<String, String>> stores;
+  final List<Map<String, String>> craftsmen;
   final VoidCallback onPickImage;
   final Function(AdModel) onSave;
   final VoidCallback onDelete;
   final VoidCallback onToggleStatus;
+  final VoidCallback? onPause;
+  final VoidCallback? onResume;
 
   const AdSlotCard({
     super.key,
     required this.ad,
     required this.stores,
+    required this.craftsmen,
     required this.onPickImage,
     required this.onSave,
     required this.onDelete,
     required this.onToggleStatus,
+    this.onPause,
+    this.onResume,
   });
 
   @override
@@ -46,12 +53,26 @@ class _AdSlotCardState extends State<AdSlotCard> {
     if (oldWidget.ad.targetStoreId != widget.ad.targetStoreId) {
       _selectedStoreId = widget.ad.targetStoreId;
     }
+    if (oldWidget.ad.imageUrl != widget.ad.imageUrl) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
     _durationController.dispose();
     super.dispose();
+  }
+
+  List<Map<String, String>> get _targetOptions =>
+      widget.ad.effectiveTargetType == AdTargetType.craftsman
+          ? widget.craftsmen
+          : widget.stores;
+
+  String? get _safeDropdownValue {
+    if (_selectedStoreId == null) return null;
+    final exists = _targetOptions.any((t) => t['id'] == _selectedStoreId);
+    return exists ? _selectedStoreId : null;
   }
 
   String _formatDuration(double hours) {
@@ -123,6 +144,10 @@ class _AdSlotCardState extends State<AdSlotCard> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    if (widget.ad.ownerName != null) ...[
+                      const SizedBox(width: 8),
+                      _OwnerBadge(ad: widget.ad),
+                    ],
                   ],
                 ),
                 Row(
@@ -133,11 +158,15 @@ class _AdSlotCardState extends State<AdSlotCard> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: isValid ? Colors.green : Colors.grey,
+                        color: widget.ad.isPaused
+                            ? Colors.amber
+                            : (isValid ? Colors.green : Colors.grey),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        isValid ? 'نشط' : 'غير نشط',
+                        widget.ad.isPaused
+                            ? 'متوقف'
+                            : (isValid ? 'نشط' : 'غير نشط'),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -146,15 +175,27 @@ class _AdSlotCardState extends State<AdSlotCard> {
                       ),
                     ),
                     const SizedBox(width: 8),
+                    if (widget.ad.isPaused && widget.onResume != null)
+                      IconButton(
+                        icon: const Icon(Icons.play_arrow, color: Colors.green),
+                        onPressed: widget.onResume,
+                        tooltip: 'استئناف',
+                      )
+                    else if (!widget.ad.isPaused &&
+                        widget.ad.isActive &&
+                        widget.onPause != null)
+                      IconButton(
+                        icon: const Icon(Icons.pause, color: Colors.orange),
+                        onPressed: widget.onPause,
+                        tooltip: 'إيقاف مؤقت',
+                      ),
                     IconButton(
                       icon: Icon(
-                        widget.ad.isActive ? Icons.pause : Icons.play_arrow,
-                        color: widget.ad.isActive
-                            ? Colors.orange
-                            : Colors.green,
+                        widget.ad.isActive ? Icons.stop : Icons.play_arrow,
+                        color: widget.ad.isActive ? Colors.grey : Colors.green,
                       ),
                       onPressed: widget.onToggleStatus,
-                      tooltip: widget.ad.isActive ? 'إيقاف' : 'تشغيل',
+                      tooltip: widget.ad.isActive ? 'إيقاف نهائي' : 'تشغيل',
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
@@ -308,20 +349,13 @@ class _AdSlotCardState extends State<AdSlotCard> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey[300]!, width: 2),
                 ),
-                child:
-                    widget.ad.imageUrl != null && widget.ad.imageUrl!.isNotEmpty
+                child: widget.ad.imageUrl != null && widget.ad.imageUrl!.isNotEmpty
                     ? Stack(
+                        fit: StackFit.expand,
                         children: [
-                          ClipRRect(
+                          AdNetworkImage(
+                            imageUrl: widget.ad.imageUrl,
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              widget.ad.imageUrl!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Icon(Icons.error, size: 50),
-                            ),
                           ),
                           Positioned(
                             top: 8,
@@ -391,9 +425,13 @@ class _AdSlotCardState extends State<AdSlotCard> {
 
             const SizedBox(height: 20),
 
-            // اختيار المتجر
+            // اختيار المتجر / نوع التوجيه
             Text(
-              'المتجر المستهدف',
+              widget.ad.effectiveTargetType == AdTargetType.imageOnly
+                  ? 'نوع التوجيه: صورة فقط'
+                  : widget.ad.effectiveTargetType == AdTargetType.craftsman
+                      ? 'الحرفي المستهدف'
+                      : 'المتجر المستهدف',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -401,24 +439,38 @@ class _AdSlotCardState extends State<AdSlotCard> {
               ),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _selectedStoreId,
-              hint: const Text('اختر متجر'),
-              decoration: InputDecoration(
-                border: OutlineInputBorder(
+            if (widget.ad.effectiveTargetType == AdTargetType.imageOnly)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
                   borderRadius: BorderRadius.circular(12),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+                child: const Text('يفتح الصورة مكبرة عند النقر'),
+              )
+            else
+              DropdownButtonFormField<String>(
+                value: _safeDropdownValue,
+                hint: Text(
+                  widget.ad.effectiveTargetType == AdTargetType.craftsman
+                      ? 'اختر حرفي'
+                      : 'اختر متجر',
                 ),
-              ),
-              items: widget.stores.map((store) {
-                return DropdownMenuItem<String>(
-                  value: store['id'],
-                  child: Text(store['name']!),
-                );
-              }).toList(),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                items: _targetOptions.map((store) {
+                  return DropdownMenuItem<String>(
+                    value: store['id'],
+                    child: Text(store['name']!),
+                  );
+                }).toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedStoreId = value;
@@ -439,6 +491,7 @@ class _AdSlotCardState extends State<AdSlotCard> {
                   final updatedAd = widget.ad.copyWith(
                     durationHours: duration,
                     targetStoreId: _selectedStoreId,
+                    targetType: widget.ad.effectiveTargetType,
                   );
 
                   widget.onSave(updatedAd);
@@ -461,6 +514,40 @@ class _AdSlotCardState extends State<AdSlotCard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OwnerBadge extends StatelessWidget {
+  final AdModel ad;
+
+  const _OwnerBadge({required this.ad});
+
+  @override
+  Widget build(BuildContext context) {
+    final createdBy = ad.createdBy ?? AdCreatedBy.admin;
+    final label = switch (createdBy) {
+      AdCreatedBy.merchant => 'تاجر',
+      AdCreatedBy.craftsman => 'حرفي',
+      _ => 'إدارة',
+    };
+    final color = switch (createdBy) {
+      AdCreatedBy.merchant => Colors.blue,
+      AdCreatedBy.craftsman => Colors.purple,
+      _ => Colors.teal,
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        '$label • ${ad.ownerName}',
+        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
       ),
     );
   }

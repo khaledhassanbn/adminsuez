@@ -47,9 +47,42 @@ class _AdminAdsView extends StatelessWidget {
           ),
           backgroundColor: AppColors.mainColor,
           elevation: 0,
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(48),
+            child: Consumer<AdminAdsViewModel>(
+              builder: (context, vm, _) => SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    _FilterChip(
+                      label: 'الكل',
+                      selected: vm.filter == AdFilter.all,
+                      onTap: () => vm.setFilter(AdFilter.all),
+                    ),
+                    _FilterChip(
+                      label: 'نشطة',
+                      selected: vm.filter == AdFilter.active,
+                      onTap: () => vm.setFilter(AdFilter.active),
+                    ),
+                    _FilterChip(
+                      label: 'متوقفة',
+                      selected: vm.filter == AdFilter.paused,
+                      onTap: () => vm.setFilter(AdFilter.paused),
+                    ),
+                    _FilterChip(
+                      label: 'منتهية',
+                      selected: vm.filter == AdFilter.expired,
+                      onTap: () => vm.setFilter(AdFilter.expired),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.swap_vert),
+              icon: const Icon(Icons.swap_vert, color: Colors.white),
               onPressed: () {
                 Navigator.push(
                   context,
@@ -63,7 +96,7 @@ class _AdminAdsView extends StatelessWidget {
               tooltip: 'ترتيب الإعلانات',
             ),
             IconButton(
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add, color: Colors.white),
               onPressed: () => _handleAddNewAd(context),
               tooltip: 'إضافة إعلان جديد',
             ),
@@ -134,11 +167,14 @@ class _AdminAdsView extends StatelessWidget {
                     key: ValueKey('ad_${ad.slotId}_$index'),
                     ad: ad,
                     stores: viewModel.stores,
+                    craftsmen: viewModel.craftsmen,
                     onPickImage: () => _handlePickImage(context, ad.slotId),
                     onSave: (updatedAd) => _handleSaveAd(context, updatedAd),
                     onDelete: () => _handleDeleteAd(context, ad.slotId),
                     onToggleStatus: () =>
                         _handleToggleStatus(context, ad.slotId, ad.isActive),
+                    onPause: () => _handlePause(context, ad.slotId),
+                    onResume: () => _handleResume(context, ad.slotId),
                   );
                 },
               ),
@@ -233,6 +269,7 @@ class _AdminAdsView extends StatelessWidget {
 
     LoadingSnackBar.show(context, 'جاري تحديث حالة الإعلان...');
     final success = await viewModel.toggleAdStatus(slotId, isActive);
+    if (!context.mounted) return;
     LoadingSnackBar.hide(context);
 
     if (success) {
@@ -280,6 +317,76 @@ class _AdminAdsView extends StatelessWidget {
         viewModel.errorMessage ?? 'فشل حفظ الإعلان',
       );
     }
+  }
+
+  Future<void> _handlePause(BuildContext context, int slotId) async {
+    final viewModel = context.read<AdminAdsViewModel>();
+    LoadingSnackBar.show(context, 'جاري إيقاف الإعلان...');
+    final success = await viewModel.pauseAd(slotId);
+    if (!context.mounted) return;
+    LoadingSnackBar.hide(context);
+    if (success) {
+      LoadingSnackBar.showSuccess(context, 'تم إيقاف الإعلان');
+    } else {
+      LoadingSnackBar.showError(
+        context,
+        viewModel.errorMessage ?? 'فشل إيقاف الإعلان',
+      );
+    }
+  }
+
+  Future<void> _handleResume(BuildContext context, int slotId) async {
+    final viewModel = context.read<AdminAdsViewModel>();
+    LoadingSnackBar.show(context, 'جاري استئناف الإعلان...');
+    final success = await viewModel.resumeAd(slotId);
+    if (!context.mounted) return;
+    LoadingSnackBar.hide(context);
+    if (success) {
+      LoadingSnackBar.showSuccess(context, 'تم استئناف الإعلان');
+    } else {
+      LoadingSnackBar.showError(
+        context,
+        viewModel.errorMessage ?? 'فشل استئناف الإعلان',
+      );
+    }
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Material(
+        color: selected ? Colors.white : Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppColors.mainColor : Colors.white,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

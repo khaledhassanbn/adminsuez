@@ -3,6 +3,7 @@ import 'package:suez_admin/commission/models/wallet_ledger_model.dart';
 import 'package:suez_admin/commission/services/commission_admin_service.dart';
 import 'package:suez_admin/notifications/widgets/send_direct_notification_dialog.dart';
 import 'package:suez_admin/stores/models/store_model.dart';
+import 'package:suez_admin/stores/services/stores_service.dart';
 import 'package:suez_admin/theme/app_color.dart';
 
 class StoreCommissionPage extends StatefulWidget {
@@ -16,6 +17,7 @@ class StoreCommissionPage extends StatefulWidget {
 class _StoreCommissionPageState extends State<StoreCommissionPage>
     with SingleTickerProviderStateMixin {
   final _service = CommissionAdminService();
+  final _storesService = StoresService();
   final _formKey = GlobalKey<FormState>();
   final _rateController = TextEditingController();
   final _creditLimitController = TextEditingController();
@@ -27,6 +29,8 @@ class _StoreCommissionPageState extends State<StoreCommissionPage>
   bool _loading = true;
   bool _savingCommission = false;
   bool _savingAdjust = false;
+  bool _savingCourier = false;
+  String _courierOverride = 'inherit';
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
@@ -77,9 +81,41 @@ class _StoreCommissionPageState extends State<StoreCommissionPage>
       _rateController.text = (store?.commissionRate ?? 5.0).toString();
       _creditLimitController.text = (store?.creditLimit ?? -50).toString();
       _type = store?.commissionType ?? 'fixed';
+      _courierOverride = _courierOverrideFromStore(store);
       _loading = false;
     });
     _fadeController.forward();
+  }
+
+  String _courierOverrideFromStore(StoreModel? store) {
+    if (store?.independentCourierEnabled == null) return 'inherit';
+    return store!.independentCourierEnabled! ? 'enabled' : 'disabled';
+  }
+
+  bool? _courierOverrideToNullable(String value) {
+    switch (value) {
+      case 'enabled':
+        return true;
+      case 'disabled':
+        return false;
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _saveCourierOverride() async {
+    setState(() => _savingCourier = true);
+    final result = await _storesService.updateIndependentCourierEnabled(
+      widget.storeId,
+      _courierOverrideToNullable(_courierOverride),
+    );
+    await _loadStore();
+    if (!mounted) return;
+    setState(() => _savingCourier = false);
+    _showSnack(
+      result['message']?.toString() ?? 'تم التحديث',
+      isSuccess: result['success'] == true,
+    );
   }
 
   Future<void> _saveStoreCommission() async {
@@ -240,6 +276,8 @@ class _StoreCommissionPageState extends State<StoreCommissionPage>
                     const SizedBox(height: 20),
                     _buildStatsRow(),
                     const SizedBox(height: 20),
+                    _buildCourierSettingsCard(),
+                    const SizedBox(height: 20),
                     _buildCommissionForm(),
                     const SizedBox(height: 20),
                     _buildManualAdjustCard(),
@@ -384,6 +422,77 @@ class _StoreCommissionPageState extends State<StoreCommissionPage>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCourierSettingsCard() {
+    return _SectionCard(
+      title: 'طلب المناديب',
+      icon: Icons.delivery_dining_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'تحكم في إتاحة خدمة طلب المناديب لهذا المتجر. '
+            'الإعداد الموروث يتبع التفعيل العام من لوحة الأدمن.',
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              color: _textSecondary,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'inherit',
+                label: Text('موروث'),
+                icon: Icon(Icons.sync_rounded, size: 18),
+              ),
+              ButtonSegment(
+                value: 'enabled',
+                label: Text('مفعّل'),
+                icon: Icon(Icons.check_circle_outline, size: 18),
+              ),
+              ButtonSegment(
+                value: 'disabled',
+                label: Text('معطّل'),
+                icon: Icon(Icons.block_rounded, size: 18),
+              ),
+            ],
+            selected: {_courierOverride},
+            onSelectionChanged: (selection) {
+              setState(() => _courierOverride = selection.first);
+            },
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _savingCourier ? null : _saveCourierOverride,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: _savingCourier
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('حفظ إعداد المناديب'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

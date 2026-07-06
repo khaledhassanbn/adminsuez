@@ -9,9 +9,13 @@ import 'package:suez_admin/dashboard/stats_dashboard_page.dart';
 import 'package:suez_admin/dashboard/sales_analytics_page.dart';
 import 'package:suez_admin/ads/views/admin_ads_page.dart';
 import 'package:suez_admin/ads/views/admin_ad_requests_page.dart';
+import 'package:suez_admin/ads/views/ads_dashboard_page.dart';
+import 'package:suez_admin/ads/views/create_admin_ad_page.dart';
+import 'package:suez_admin/ads/views/ads_reorder_page.dart';
 import 'package:suez_admin/offices/offices_list_page.dart';
 import 'package:suez_admin/offices/create_edit_office_page.dart';
 import 'package:suez_admin/delivery_fee/delivery_fee_settings_page.dart';
+import 'package:suez_admin/courier_settings/pages/independent_courier_settings_page.dart';
 import 'package:suez_admin/courier_requests/courier_requests_page.dart';
 import 'package:suez_admin/courier_requests/courier_request_detail_page.dart';
 import 'package:suez_admin/account/pages/account_page.dart';
@@ -39,6 +43,7 @@ import 'package:suez_admin/notifications/pages/announcements_history_page.dart';
 import 'package:suez_admin/notifications/pages/announcement_detail_page.dart';
 import 'package:suez_admin/promotional_popups/pages/popups_list_page.dart';
 import 'package:suez_admin/promotional_popups/pages/create_edit_popup_page.dart';
+import 'package:suez_admin/zones/pages/zone_management_page.dart';
 
 import 'package:go_router/go_router.dart';
 
@@ -92,6 +97,18 @@ final adminRoutes = [
     },
   ),
   GoRoute(
+    path: '/admin/ads-dashboard',
+    builder: (context, state) => const AdsDashboardPage(),
+  ),
+  GoRoute(
+    path: '/admin/create-admin-ad',
+    builder: (context, state) => const CreateAdminAdPage(),
+  ),
+  GoRoute(
+    path: '/admin/ads-reorder',
+    builder: (context, state) => const AdsReorderPage(),
+  ),
+  GoRoute(
     path: '/admin/ads',
     builder: (context, state) => const AdminAdsPage(),
   ),
@@ -117,6 +134,10 @@ final adminRoutes = [
   GoRoute(
     path: '/admin/delivery-fee-settings',
     builder: (context, state) => const DeliveryFeeSettingsPage(),
+  ),
+  GoRoute(
+    path: '/admin/courier-settings',
+    builder: (context, state) => const IndependentCourierSettingsPage(),
   ),
   GoRoute(
     path: '/admin/courier-requests',
@@ -266,5 +287,9 @@ final adminRoutes = [
       final popupId = state.pathParameters['popupId']!;
       return CreateEditPopupPage(popupId: popupId);
     },
+  ),
+  GoRoute(
+    path: '/admin/zone-management',
+    builder: (context, state) => const ZoneManagementPage(),
   ),
 ];

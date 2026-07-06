@@ -15,6 +15,7 @@ class StoreModel {
   final double totalCommissionsPaid;
   final DateTime? lastCommissionAt;
   final double? walletBalance;
+  final bool? independentCourierEnabled;
 
   StoreModel({
     required this.id,
@@ -31,6 +32,7 @@ class StoreModel {
     this.totalCommissionsPaid = 0.0,
     this.lastCommissionAt,
     this.walletBalance,
+    this.independentCourierEnabled,
   });
 
   factory StoreModel.fromDocument(DocumentSnapshot doc) {
@@ -55,6 +57,9 @@ class StoreModel {
       creditLimit: (data['creditLimit'] ?? -50.0).toDouble(),
       totalCommissionsPaid: (data['totalCommissionsPaid'] ?? 0.0).toDouble(),
       lastCommissionAt: readDate(data['lastCommissionAt']),
+      independentCourierEnabled: data.containsKey('independentCourierEnabled')
+          ? data['independentCourierEnabled'] == true
+          : null,
     );
   }
 
@@ -92,6 +97,8 @@ class StoreModel {
     double? totalCommissionsPaid,
     DateTime? lastCommissionAt,
     double? walletBalance,
+    bool? independentCourierEnabled,
+    bool clearIndependentCourierEnabled = false,
   }) {
     return StoreModel(
       id: id ?? this.id,
@@ -108,6 +115,9 @@ class StoreModel {
       totalCommissionsPaid: totalCommissionsPaid ?? this.totalCommissionsPaid,
       lastCommissionAt: lastCommissionAt ?? this.lastCommissionAt,
       walletBalance: walletBalance ?? this.walletBalance,
+      independentCourierEnabled: clearIndependentCourierEnabled
+          ? null
+          : (independentCourierEnabled ?? this.independentCourierEnabled),
     );
   }
 

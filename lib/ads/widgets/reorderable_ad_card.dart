@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/ad_model.dart';
+import 'ad_network_image.dart';
 
 class ReorderableAdCard extends StatelessWidget {
   final AdModel ad;
@@ -25,15 +26,11 @@ class ReorderableAdCard extends StatelessWidget {
             color: Colors.grey[200],
           ),
           child: ad.imageUrl != null && ad.imageUrl!.isNotEmpty
-              ? ClipRRect(
+              ? AdNetworkImage(
+                  imageUrl: ad.imageUrl,
+                  width: 80,
+                  height: 60,
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    ad.imageUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(Icons.image, color: Colors.grey);
-                    },
-                  ),
                 )
               : const Icon(Icons.image, color: Colors.grey),
         ),

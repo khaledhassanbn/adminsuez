@@ -81,6 +81,11 @@ class DashboardPage extends StatelessWidget {
             icon: Icons.delivery_dining_rounded,
             route: '/admin/delivery-fee-settings',
           ),
+          GridMenuItem(
+            title: 'إعدادات طلب المناديب',
+            icon: Icons.toggle_on_rounded,
+            route: '/admin/courier-settings',
+          ),
         ],
       ),
       CategoryGroup(
@@ -123,7 +128,7 @@ class DashboardPage extends StatelessWidget {
           GridMenuItem(
             title: 'إعلانات الهيدر',
             icon: Icons.photo_library_rounded,
-            route: '/admin/ads',
+            route: '/admin/ads-dashboard',
           ),
           GridMenuItem(
             title: 'الإعلانات المنبثقة',
@@ -201,6 +206,11 @@ class DashboardPage extends StatelessWidget {
             title: 'الحسابات المحذوفة',
             icon: Icons.delete_sweep_rounded,
             route: '/admin/deleted-accounts',
+          ),
+          GridMenuItem(
+            title: 'إدارة المناطق',
+            icon: Icons.map_rounded,
+            route: '/admin/zone-management',
           ),
         ],
       ),

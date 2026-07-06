@@ -4,15 +4,20 @@ import '../models/ad_model.dart';
 import '../services/ad_request_service.dart';
 import '../services/ads_service.dart';
 
+enum RequestFilter { pending, approved, rejected, all }
+
 class AdminAdRequestsViewModel extends ChangeNotifier {
   final AdRequestService _adRequestService = AdRequestService();
   final AdsService _adsService = AdsService();
 
+  List<AdRequestModel> _allRequests = [];
   List<AdRequestModel> _requests = [];
+  RequestFilter _filter = RequestFilter.pending;
   bool _isLoading = true;
   String? _errorMessage;
 
   List<AdRequestModel> get requests => _requests;
+  RequestFilter get filter => _filter;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -21,12 +26,8 @@ class AdminAdRequestsViewModel extends ChangeNotifier {
     _errorMessage = null;
 
     try {
-      final allRequests = await _adRequestService.fetchAllAdRequests();
-      final pendingRequests = allRequests
-          .where((r) => r.status == 'pending')
-          .toList();
-
-      _requests = pendingRequests;
+      _allRequests = await _adRequestService.fetchAllAdRequests();
+      _applyFilter();
     } catch (e) {
       _errorMessage = 'خطأ في تحميل الطلبات: ${e.toString()}';
     } finally {
@@ -34,45 +35,93 @@ class AdminAdRequestsViewModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateRequestStatus(String requestId, String status) async {
+  void setFilter(RequestFilter filter) {
+    _filter = filter;
+    _applyFilter();
+    notifyListeners();
+  }
+
+  void _applyFilter() {
+    switch (_filter) {
+      case RequestFilter.pending:
+        _requests = _allRequests.where((r) => r.status == 'pending').toList();
+      case RequestFilter.approved:
+        _requests = _allRequests.where((r) => r.status == 'approved').toList();
+      case RequestFilter.rejected:
+        _requests = _allRequests.where((r) => r.status == 'rejected').toList();
+      case RequestFilter.all:
+        _requests = List.from(_allRequests);
+    }
+  }
+
+  Future<bool> approveRequest(String requestId) async {
     _errorMessage = null;
 
     try {
-      // إذا كانت الموافقة، قم بإنشاء إعلان جديد
-      if (status == 'approved') {
-        final request = _requests.firstWhere((r) => r.id == requestId);
+      final request = _allRequests.firstWhere((r) => r.id == requestId);
 
-        final newAd = AdModel(
-          slotId: 0,
-          imageUrl: request.imageUrl,
-          targetStoreId: request.storeId,
-          durationHours: request.days * 24,
-          isActive: true,
-          startTime: DateTime.now(),
-        );
+      final targetType = request.isCraftsmanRequest
+          ? AdTargetType.craftsman
+          : AdTargetType.store;
 
-        final adCreated = await _adsService.addAd(newAd);
-        if (!adCreated) {
-          _errorMessage = 'فشل إنشاء الإعلان';
-          return false;
-        }
+      final newAd = AdModel(
+        slotId: 0,
+        imageUrl: request.imageUrl,
+        targetStoreId: request.storeId,
+        targetType: targetType,
+        durationHours: request.days * 24,
+        isActive: true,
+        isPaused: false,
+        startTime: DateTime.now(),
+        createdBy: request.isCraftsmanRequest
+            ? AdCreatedBy.craftsman
+            : AdCreatedBy.merchant,
+        ownerUid: request.ownerUid,
+        ownerName: request.storeName,
+        price: request.totalPrice,
+        requestId: request.id,
+      );
+
+      final adCreated = await _adsService.addAd(newAd);
+      if (!adCreated) {
+        _errorMessage = 'فشل إنشاء الإعلان';
+        return false;
       }
 
-      // تحديث حالة الطلب
       final success = await _adRequestService.updateRequestStatus(
         requestId,
-        status,
+        'approved',
       );
 
       if (success) {
-        // حذف الطلب من القائمة
-        _requests.removeWhere((r) => r.id == requestId);
-        notifyListeners();
+        await loadRequests();
         return true;
-      } else {
-        _errorMessage = 'فشل تحديث حالة الطلب';
-        return false;
       }
+      _errorMessage = 'فشل تحديث حالة الطلب';
+      return false;
+    } catch (e) {
+      _errorMessage = 'خطأ: ${e.toString()}';
+      return false;
+    }
+  }
+
+  Future<bool> rejectWithReason(String requestId, String reason) async {
+    _errorMessage = null;
+
+    try {
+      final success = await _adRequestService.updateRequestStatus(
+        requestId,
+        'rejected',
+        rejectionReason: reason,
+        refund: true,
+      );
+
+      if (success) {
+        await loadRequests();
+        return true;
+      }
+      _errorMessage = 'فشل رفض الطلب';
+      return false;
     } catch (e) {
       _errorMessage = 'خطأ: ${e.toString()}';
       return false;
@@ -87,10 +136,9 @@ class AdminAdRequestsViewModel extends ChangeNotifier {
       if (success) {
         await loadRequests();
         return true;
-      } else {
-        _errorMessage = 'فشل حذف الطلب';
-        return false;
       }
+      _errorMessage = 'فشل حذف الطلب';
+      return false;
     } catch (e) {
       _errorMessage = 'خطأ: ${e.toString()}';
       return false;
@@ -142,6 +190,3 @@ class AdminAdRequestsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 }
-
-
-
