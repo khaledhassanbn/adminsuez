@@ -56,8 +56,8 @@ class ZoneManagementService {
   ZoneManagementService({
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _storage = storage ?? FirebaseStorage.instance;
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _storage = storage ?? FirebaseStorage.instance;
 
   Future<ZoneConfig?> getCurrentConfig() async {
     final doc = await _firestore.doc(_configDocPath).get();
@@ -73,14 +73,17 @@ class ZoneManagementService {
     final errors = <String>[];
     final fileSizeBytes = bytes.length;
 
-    final versionMatch = RegExp(r'^zones_v(\d+)\.json$', caseSensitive: false)
-        .firstMatch(fileName);
+    final versionMatch = RegExp(
+      r'^zones_v(\d+)\.json$',
+      caseSensitive: false,
+    ).firstMatch(fileName);
     if (versionMatch == null) {
       errors.add('اسم الملف يجب أن يكون بصيغة zones_vX.json');
     }
 
-    final fileVersion =
-        versionMatch != null ? int.tryParse(versionMatch.group(1)!) : null;
+    final fileVersion = versionMatch != null
+        ? int.tryParse(versionMatch.group(1)!)
+        : null;
 
     Map<String, dynamic>? data;
     try {
